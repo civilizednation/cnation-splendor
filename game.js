@@ -838,11 +838,16 @@ function renderBank() {
     const count = state.game.bank[color];
     const picked = state.selectedTokens[color] || 0;
     const disabled = color === "gold" || count <= 0 || state.game.current !== "player";
+    const canDouble = color !== "gold" && picked === 1 && sumTokens(state.selectedTokens) === 1 && count >= 4 && state.game.current === "player";
     const visible = Math.max(1, Math.min(count, 5));
     const coins = Array.from({ length: visible }, (_, i) => `<span class="coin" style="--gem:${GEM_HEX[color]};--token-image:url('${tokenImage(state.game.theme, color)}');--stack-y:${i * 3}px;--stack-z:${visible - i}"></span>`).join("");
     return `
       <button class="token-stack ${disabled ? "disabled" : ""} ${picked ? "selected" : ""}" data-token="${color}">
-        <span class="coins">${coins}${picked ? `<span class="picked-badge">선택 ${picked}</span>` : ""}</span>
+        <span class="coins">
+          ${coins}
+          ${picked ? `<span class="picked-badge">선택 ${picked}</span>` : ""}
+          ${canDouble ? `<span class="double-token-button" data-token-double="${color}">2개</span>` : ""}
+        </span>
         <span><strong>${GEM_LABEL[color]}</strong> <span class="token-count">${count}</span></span>
       </button>
     `;
@@ -871,6 +876,7 @@ function renderBottomPanel() {
       <div class="reserved-list">${renderReservedSlots(player)}</div>
     </div>
     <div class="actions">
+      <button id="cancelSelection" class="ghost cancel-button" ${hasSelection() && !state.pending ? "" : "disabled"}>취소</button>
       <button id="confirmAction" class="primary action-button" ${actionLabel().disabled ? "disabled" : ""}>${actionLabel().label}</button>
       <button id="endTurn" class="primary turn-button" ${state.pending || state.game.current !== "player" ? "disabled" : ""}>턴 종료</button>
       <button id="settingsButton" class="ghost settings-button" aria-label="설정">⚙</button>
@@ -937,6 +943,10 @@ function actionLabel() {
   return { label: "확인", disabled: true };
 }
 
+function hasSelection() {
+  return sumTokens(state.selectedTokens) > 0 || state.selectedCard || state.selectedReserved !== null;
+}
+
 function validTokenSelection(tokens, bankSnapshot = state.game.bank) {
   const entries = COLORS.filter((color) => tokens[color] > 0);
   const total = entries.reduce((sum, color) => sum + tokens[color], 0);
@@ -949,7 +959,8 @@ function validTokenSelection(tokens, bankSnapshot = state.game.bank) {
 function validTokenSelectionStep(tokens, bankSnapshot = state.game.bank) {
   const entries = COLORS.filter((color) => tokens[color] > 0);
   const total = entries.reduce((sum, color) => sum + tokens[color], 0);
-  if (tokens.gold > 0 || total === 0 || total > 3) return false;
+  if (tokens.gold > 0 || total > 3) return false;
+  if (total === 0) return true;
   if (entries.some((color) => tokens[color] > bankSnapshot[color])) return false;
   if (entries.some((color) => tokens[color] > 2)) return false;
   if (entries.length === 1 && total <= 2) return total === 1 || bankSnapshot[entries[0]] >= 4;
@@ -958,14 +969,20 @@ function validTokenSelectionStep(tokens, bankSnapshot = state.game.bank) {
 
 document.addEventListener("click", (event) => {
   if (!state.game || state.game.gameOver) return;
+  const doubleToken = event.target.closest("[data-token-double]");
   const token = event.target.closest("[data-token]");
   const marketCard = event.target.closest("[data-card-tier]");
   const reserved = event.target.closest("[data-reserved-index]");
   const deck = event.target.closest("[data-reserve-deck]");
+  if (doubleToken) {
+    selectDoubleToken(doubleToken.dataset.tokenDouble);
+    return;
+  }
   if (token) selectToken(token.dataset.token);
   if (marketCard) selectMarketCard(Number(marketCard.dataset.cardTier), Number(marketCard.dataset.cardIndex));
   if (reserved && !marketCard) selectReservedCard(Number(reserved.dataset.reservedIndex));
   if (deck) reserveBlind(Number(deck.dataset.reserveDeck));
+  if (event.target.closest("#cancelSelection")) cancelSelection();
   if (event.target.closest("#confirmAction")) confirmAction();
   if (event.target.closest("#endTurn")) finishTurn();
   if (event.target.closest("#settingsButton")) {
@@ -980,6 +997,14 @@ function clearSelection() {
   state.selectedReserved = null;
 }
 
+function cancelSelection() {
+  if (!hasSelection() || state.pending) return;
+  playSfx("ui");
+  clearSelection();
+  state.game.log = "선택을 취소했습니다.";
+  render();
+}
+
 function selectToken(color) {
   if (state.game.current !== "player" || color === "gold" || state.game.bank[color] <= 0 || state.pending) {
     playSfx("error");
@@ -988,8 +1013,7 @@ function selectToken(color) {
   state.selectedCard = null;
   state.selectedReserved = null;
   const next = cloneTokens(state.selectedTokens);
-  if (next[color] >= 2) next[color] = 0;
-  else next[color] += 1;
+  next[color] = next[color] > 0 ? 0 : 1;
   if (!validTokenSelectionStep(next)) {
     playSfx("error");
     state.game.log = "같은 색 토큰 2개는 은행에 4개 이상 있고, 다른 색과 함께 고를 수 없습니다.";
@@ -997,6 +1021,20 @@ function selectToken(color) {
     return;
   }
   playSfx("token");
+  state.selectedTokens = next;
+  render();
+}
+
+function selectDoubleToken(color) {
+  if (state.game.current !== "player" || color === "gold" || state.game.bank[color] < 4 || state.pending) {
+    playSfx("error");
+    return;
+  }
+  const next = emptyTokens();
+  next[color] = 2;
+  playSfx("token");
+  state.selectedCard = null;
+  state.selectedReserved = null;
   state.selectedTokens = next;
   render();
 }
