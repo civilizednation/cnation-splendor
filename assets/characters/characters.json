@@ -1,0 +1,65 @@
+[
+  {
+    "id": "child_boy",
+    "label": "한국 어린이 남",
+    "source_cell": 1,
+    "webp": "assets/characters/01_child_boy.webp",
+    "original": "assets/characters/originals/01_child_boy.png"
+  },
+  {
+    "id": "child_girl",
+    "label": "한국 어린이 여",
+    "source_cell": 2,
+    "webp": "assets/characters/02_child_girl.webp",
+    "original": "assets/characters/originals/02_child_girl.png"
+  },
+  {
+    "id": "teen_boy",
+    "label": "한국 청소년 남",
+    "source_cell": 3,
+    "webp": "assets/characters/03_teen_boy.webp",
+    "original": "assets/characters/originals/03_teen_boy.png"
+  },
+  {
+    "id": "teen_girl",
+    "label": "한국 청소년 여",
+    "source_cell": 4,
+    "webp": "assets/characters/04_teen_girl.webp",
+    "original": "assets/characters/originals/04_teen_girl.png"
+  },
+  {
+    "id": "adult_man",
+    "label": "한국 성인 남",
+    "source_cell": 5,
+    "webp": "assets/characters/05_adult_man.webp",
+    "original": "assets/characters/originals/05_adult_man.png"
+  },
+  {
+    "id": "adult_woman",
+    "label": "한국 성인 여",
+    "source_cell": 6,
+    "webp": "assets/characters/06_adult_woman.webp",
+    "original": "assets/characters/originals/06_adult_woman.png"
+  },
+  {
+    "id": "young_wizard",
+    "label": "젊은 마법사",
+    "source_cell": 7,
+    "webp": "assets/characters/07_young_wizard.webp",
+    "original": "assets/characters/originals/07_young_wizard.png"
+  },
+  {
+    "id": "young_princess",
+    "label": "젊은 공주",
+    "source_cell": 8,
+    "webp": "assets/characters/08_young_princess.webp",
+    "original": "assets/characters/originals/08_young_princess.png"
+  },
+  {
+    "id": "future_human",
+    "label": "미래인간",
+    "source_cell": 9,
+    "webp": "assets/characters/09_future_human.webp",
+    "original": "assets/characters/originals/09_future_human.png"
+  }
+]
