@@ -1,5 +1,35 @@
 "use strict";
 
+// The game is authored against a fixed 1600x900 design canvas (#stage in
+// index.html). Instead of separate PC/tablet/phone layouts, we measure the
+// real viewport and uniformly scale that single canvas to fit, so the exact
+// same layout the game was designed with just shrinks or grows to fit any
+// landscape screen (laptop, tablet, phone) without a manual device choice.
+const DESIGN_WIDTH = 1600;
+const DESIGN_HEIGHT = 900;
+const MAX_STAGE_SCALE = 1.5;
+
+function viewportSize() {
+  const vv = window.visualViewport;
+  if (vv) return { w: vv.width, h: vv.height };
+  return { w: window.innerWidth, h: window.innerHeight };
+}
+
+function fitStageToViewport() {
+  const stage = document.querySelector("#stage");
+  if (!stage) return;
+  const { w, h } = viewportSize();
+  const scale = Math.min(w / DESIGN_WIDTH, h / DESIGN_HEIGHT, MAX_STAGE_SCALE);
+  const left = (w - DESIGN_WIDTH * scale) / 2;
+  const top = (h - DESIGN_HEIGHT * scale) / 2;
+  stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+}
+
+window.addEventListener("resize", fitStageToViewport);
+window.addEventListener("orientationchange", () => setTimeout(fitStageToViewport, 60));
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fitStageToViewport);
+fitStageToViewport();
+
 const COLORS = ["white", "blue", "green", "red", "black"];
 const TOKEN_COLORS = [...COLORS, "gold"];
 const GEM_LABEL = { white: "화이트", blue: "블루", green: "그린", red: "레드", black: "블랙", gold: "골드" };
