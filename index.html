@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>CNATION Splendor</title>
+  <meta name="description" content="1:1 AI로 즐기는 테마형 Splendor 웹게임">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="portraitGate" class="portrait-gate">
+    <div>
+      <strong>기기를 가로로 돌려주세요</strong>
+      <span>이 게임은 가로 화면에 맞춰 설계되었습니다.</span>
+    </div>
+  </div>
+
+  <main id="app">
+    <section id="titleScreen" class="title-screen">
+      <div class="title-copy">
+        <p class="eyebrow">CNATION WEBGAME</p>
+        <h1>Splendor</h1>
+      </div>
+
+      <div class="setup-grid">
+        <section class="setup-panel">
+          <h2>난이도</h2>
+          <div class="segmented" id="difficultyChoices"></div>
+        </section>
+
+        <section class="setup-panel wide">
+          <h2>테마</h2>
+          <div class="theme-choices" id="themeChoices"></div>
+        </section>
+
+        <section class="setup-panel wide">
+          <h2>캐릭터</h2>
+          <div class="avatar-choices" id="avatarChoices"></div>
+        </section>
+      </div>
+
+      <button id="startButton" class="primary start-button">게임 시작</button>
+    </section>
+
+    <section id="loadingScreen" class="loading-screen hidden">
+      <div class="loader-card">
+        <strong>게임 준비 중...</strong>
+        <div class="progress"><span id="loadingBar"></span></div>
+        <p id="loadingText">테마 자산을 확인하고 있습니다.</p>
+      </div>
+    </section>
+
+    <section id="gameScreen" class="game-screen hidden">
+      <div class="topbar">
+        <div id="turnBanner" class="turn-banner"></div>
+        <div id="messageLog" class="message-log"></div>
+      </div>
+
+      <div class="play-table">
+        <div class="board">
+          <aside class="cpu-panel player-card" id="cpuPanel"></aside>
+          <section class="decks" id="deckColumn"></section>
+          <section class="market" id="market"></section>
+          <section class="bank" id="bank"></section>
+          <section class="nobles" id="nobles"></section>
+        </div>
+
+        <footer class="player-panel player-card" id="playerPanel"></footer>
+      </div>
+    </section>
+  </main>
+
+  <div id="modalLayer" class="modal-layer hidden"></div>
+
+  <script src="./game.js"></script>
+</body>
+</html>
