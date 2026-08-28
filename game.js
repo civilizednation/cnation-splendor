@@ -627,30 +627,27 @@ function setupUI() {
   bindSetupEvents();
 }
 
+function bindChoiceGroup(selector, key, attr, cast = (value) => value) {
+  document.querySelector(selector).addEventListener("click", (event) => {
+    const button = event.target.closest(`[data-${attr}]`);
+    if (!button) return;
+    const value = cast(button.dataset[attr]);
+    if (value === state.setup[key]) return;
+    playSfx("ui");
+    state.setup[key] = value;
+    // Toggle the .selected class in place instead of re-rendering the whole
+    // group: rebuilding the buttons' innerHTML would recreate their <img>
+    // elements and make character portraits visibly flicker/reload.
+    for (const choice of button.parentElement.children) choice.classList.toggle("selected", choice === button);
+  });
+}
+
 function bindSetupEvents() {
   if (setupEventsBound) return;
   setupEventsBound = true;
-  document.querySelector("#difficultyChoices").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-difficulty]");
-    if (!button || button.dataset.difficulty === state.setup.difficulty) return;
-    playSfx("ui");
-    state.setup.difficulty = button.dataset.difficulty;
-    setupUI();
-  });
-  document.querySelector("#themeChoices").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-theme]");
-    if (!button || button.dataset.theme === state.setup.theme) return;
-    playSfx("ui");
-    state.setup.theme = button.dataset.theme;
-    setupUI();
-  });
-  document.querySelector("#avatarChoices").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-avatar]");
-    if (!button || Number(button.dataset.avatar) === state.setup.avatar) return;
-    playSfx("ui");
-    state.setup.avatar = Number(button.dataset.avatar);
-    setupUI();
-  });
+  bindChoiceGroup("#difficultyChoices", "difficulty", "difficulty");
+  bindChoiceGroup("#themeChoices", "theme", "theme");
+  bindChoiceGroup("#avatarChoices", "avatar", "avatar", Number);
   document.querySelector("#startButton").addEventListener("click", startLoading);
 }
 
@@ -809,18 +806,35 @@ function renderTopbar() {
   document.querySelector("#messageLog").textContent = game.log;
 }
 
+// Rebuilding a panel's whole innerHTML on every render() call recreates its
+// <img> avatar element each time, which makes the portrait visibly
+// flicker/reload even though the same cached image is used. A player's
+// avatar never changes mid-game, so the identity markup is built once (keyed
+// by avatar id) and left untouched; only the score/resource/stat fields are
+// patched in place on every render.
+function ensureShell(root, avatarId, html) {
+  if (root.dataset.avatarId === avatarId) return false;
+  root.dataset.avatarId = avatarId;
+  root.innerHTML = html;
+  return true;
+}
+
 function renderPlayerPanel(key, root) {
   const player = state.game.players[key];
-  root.innerHTML = `
+  ensureShell(root, player.avatar.id, `
     <div class="identity">
       <div class="portrait">${renderAvatar(player.avatar)}</div>
-      <div class="identity-copy"><div class="name">${player.name}</div><div class="score">${score(player)}</div></div>
+      <div class="identity-copy"><div class="name">${player.name}</div><div class="score"></div></div>
     </div>
-    ${renderScoreShield(player)}
-    <div class="panel-block resource-block"><div class="panel-title">보석 현황</div>${resourceGrid(player, true)}</div>
-    <div class="stat-line"><span>예약</span><strong>${player.reserved.length}/3</strong></div>
-    <div class="stat-line"><span>개발 카드</span><strong>${player.developments.length}</strong></div>
-  `;
+    <div class="score-shield"><span>점수</span><strong data-field="score"></strong></div>
+    <div class="panel-block resource-block"><div class="panel-title">보석 현황</div><div data-field="resources"></div></div>
+    <div class="stat-line"><span>예약</span><strong data-field="reserved"></strong></div>
+    <div class="stat-line"><span>개발 카드</span><strong data-field="developments"></strong></div>
+  `);
+  root.querySelector('[data-field="score"]').textContent = score(player);
+  root.querySelector('[data-field="resources"]').innerHTML = resourceGrid(player, true);
+  root.querySelector('[data-field="reserved"]').textContent = `${player.reserved.length}/3`;
+  root.querySelector('[data-field="developments"]').textContent = player.developments.length;
 }
 
 function renderDecks() {
@@ -893,23 +907,34 @@ function renderNobles() {
 
 function renderBottomPanel() {
   const player = state.game.players.player;
-  document.querySelector("#playerPanel").innerHTML = `
+  const root = document.querySelector("#playerPanel");
+  ensureShell(root, player.avatar.id, `
     <div class="identity">
       <div class="portrait">${renderAvatar(player.avatar)}</div>
-      <div class="identity-copy"><div class="name">You</div>${renderScoreShield(player)}</div>
+      <div class="identity-copy"><div class="name">You</div><div class="score-shield"><span>점수</span><strong data-field="score"></strong></div></div>
     </div>
-    <div class="panel-block resource-block resource-block-wide"><div class="panel-title">보석 현황</div>${resourceGrid(player)}</div>
+    <div class="panel-block resource-block resource-block-wide"><div class="panel-title">보석 현황</div><div data-field="resources"></div></div>
     <div class="panel-block">
-      <div class="panel-title">예약 카드 ${player.reserved.length}/3</div>
-      <div class="reserved-list">${renderReservedSlots(player)}</div>
+      <div class="panel-title" data-field="reserved-title"></div>
+      <div class="reserved-list" data-field="reserved-list"></div>
     </div>
     <div class="actions">
-      <button id="cancelSelection" class="ghost cancel-button" ${hasSelection() && !state.pending ? "" : "disabled"}>토큰취소</button>
-      <button id="confirmAction" class="primary action-button" ${actionLabel().disabled ? "disabled" : ""}>${actionLabel().label}</button>
-      <button id="endTurn" class="primary turn-button" ${state.pending || state.game.current !== "player" ? "disabled" : ""}>턴 종료</button>
+      <button id="cancelSelection" class="ghost cancel-button">토큰취소</button>
+      <button id="confirmAction" class="primary action-button"></button>
+      <button id="endTurn" class="primary turn-button">턴 종료</button>
       <button id="settingsButton" class="ghost settings-button" aria-label="설정">⚙</button>
     </div>
-  `;
+  `);
+  root.querySelector('[data-field="score"]').textContent = score(player);
+  root.querySelector('[data-field="resources"]').innerHTML = resourceGrid(player);
+  root.querySelector('[data-field="reserved-title"]').textContent = `예약 카드 ${player.reserved.length}/3`;
+  root.querySelector('[data-field="reserved-list"]').innerHTML = renderReservedSlots(player);
+  const action = actionLabel();
+  root.querySelector("#cancelSelection").disabled = !(hasSelection() && !state.pending);
+  const confirmButton = root.querySelector("#confirmAction");
+  confirmButton.disabled = action.disabled;
+  confirmButton.textContent = action.label;
+  root.querySelector("#endTurn").disabled = state.pending || state.game.current !== "player";
 }
 
 function renderReservedSlots(player) {
@@ -922,10 +947,6 @@ function renderReservedSlots(player) {
 
 function gemRow(tokens, colors) {
   return `<div class="gem-row">${colors.map((color) => `<span class="gem-pill"><span class="gem-dot" style="--gem:${GEM_HEX[color]}"></span>${tokens[color] || 0}</span>`).join("")}</div>`;
-}
-
-function renderScoreShield(player) {
-  return `<div class="score-shield"><span>점수</span><strong>${score(player)}</strong></div>`;
 }
 
 function resourceGrid(player, compact = false) {
