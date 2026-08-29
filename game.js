@@ -974,8 +974,8 @@ function renderBottomPanel() {
       <div class="identity-copy"><div class="name">You</div><div class="score-shield"><span>점수</span><strong data-field="score"></strong></div></div>
     </div>
     <div class="panel-block resource-block resource-block-wide"><div class="panel-title">보석 현황</div><div data-field="resources"></div></div>
-    <div class="panel-block">
-      <div class="panel-title" data-field="reserved-title"></div>
+    <div class="panel-block reserved-block">
+      <div class="reserved-label"><span>예약 카드</span><strong data-field="reserved-count"></strong></div>
       <div class="reserved-list" data-field="reserved-list"></div>
     </div>
     <div class="actions">
@@ -987,7 +987,7 @@ function renderBottomPanel() {
   `);
   root.querySelector('[data-field="score"]').textContent = score(player);
   root.querySelector('[data-field="resources"]').innerHTML = resourceGrid(player);
-  root.querySelector('[data-field="reserved-title"]').textContent = `예약 카드 ${player.reserved.length}/3`;
+  root.querySelector('[data-field="reserved-count"]').textContent = `${player.reserved.length}/3`;
   root.querySelector('[data-field="reserved-list"]').innerHTML = renderReservedSlots(player);
   const action = actionLabel();
   root.querySelector("#cancelSelection").disabled = !(hasSelection() && !state.pending);
@@ -998,10 +998,20 @@ function renderBottomPanel() {
 }
 
 function renderReservedSlots(player) {
+  const theme = state.game.theme;
   return [0, 1, 2].map((slot) => {
     const card = player.reserved[slot];
     if (!card) return `<span class="reserved-slot"></span>`;
-    return `<button class="reserved-mini" data-reserved-index="${slot}" style="--art-a:${state.game.theme.art[card.tier - 1][0]};--art-b:${state.game.theme.art[card.tier - 1][1]};--card-image:url('${cardImage(state.game.theme, card)}')" title="예약 카드"></button>`;
+    const art = theme.art[card.tier - 1];
+    const selected = state.selectedReserved === slot;
+    return `
+      <button class="reserved-card ${selected ? "selected" : ""}" data-reserved-index="${slot}" style="--art-a:${art[0]};--art-b:${art[1]};--card-image:url('${cardImage(theme, card)}')" title="예약 카드">
+        <div class="card-band"></div>
+        <div class="points">${card.points || ""}</div>
+        <div class="bonus-dot" style="--gem:${GEM_HEX[card.bonus]};--gem-image:url('${gemImage(card.bonus)}')"></div>
+        <div class="cost-grid">${renderCost(card.cost, theme)}</div>
+      </button>
+    `;
   }).join("");
 }
 

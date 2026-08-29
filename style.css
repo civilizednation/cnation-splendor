@@ -825,7 +825,7 @@ h1 {
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 174px minmax(460px, 1.45fr) minmax(140px, .54fr) 378px;
+  grid-template-columns: 174px minmax(360px, 1fr) 344px 378px;
   align-items: stretch;
   gap: 10px;
   padding: 9px 10px;
@@ -853,6 +853,31 @@ h1 {
   font-size: 15px;
   font-weight: 800;
   text-align: center;
+}
+.reserved-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reserved-label {
+  display: grid;
+  flex: none;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  min-width: 46px;
+}
+.reserved-label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+.reserved-label strong {
+  color: #3c2414;
+  font-size: 20px;
+  font-weight: 900;
 }
 .resource-split {
   display: grid;
@@ -983,15 +1008,17 @@ h1 {
   height: 25px;
 }
 .reserved-list {
+  flex: 1;
   display: flex;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
   align-items: center;
   justify-content: center;
-  min-height: 68px;
 }
-.reserved-mini {
-  width: 48px;
+.reserved-card {
+  position: relative;
+  overflow: hidden;
+  width: 82px;
   aspect-ratio: var(--card-ratio);
   border-radius: 7px;
   background:
@@ -1001,9 +1028,42 @@ h1 {
   cursor: pointer;
   box-shadow: 0 4px 0 rgba(92, 52, 28, .26), 0 7px 10px rgba(61,31,15,.16);
 }
+.reserved-card.selected { outline: 3px solid #f2c75c; }
+.reserved-card .card-band {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 28%;
+  background: rgba(255,255,255,.38);
+  border-bottom: 1px solid rgba(0,0,0,.14);
+}
+.reserved-card .points {
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  font-size: 23px;
+}
+.reserved-card .bonus-dot {
+  right: 4px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+}
+.reserved-card .cost-grid {
+  left: 4px;
+  bottom: 4px;
+  grid-template-columns: 22px 22px;
+  grid-template-rows: repeat(3, 21px);
+  gap: 2px;
+}
+.reserved-card .cost-chip {
+  width: 21px;
+  height: 21px;
+  font-size: 13px;
+  border-width: 1px;
+}
 .reserved-slot {
   display: block;
-  width: 48px;
+  width: 82px;
   aspect-ratio: var(--card-ratio);
   border-radius: 7px;
   border: 1px dashed rgba(114, 65, 30, .34);
