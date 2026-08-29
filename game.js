@@ -142,7 +142,7 @@ const BGM_TRACKS = {
 };
 const BGM_FADE_SECONDS = 2;
 const BGM_OVERLAP_SECONDS = 3;
-const SFX_OUTPUT_GAIN = 1.95;
+const SFX_OUTPUT_GAIN = 3.9;
 
 const state = {
   setup: { difficulty: "normal", theme: "classic", avatar: 3 },
