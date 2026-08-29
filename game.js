@@ -651,24 +651,84 @@ function bindSetupEvents() {
   document.querySelector("#startButton").addEventListener("click", startLoading);
 }
 
+function requestFullscreenSafe() {
+  const el = document.documentElement;
+  const request = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (!request) return;
+  try {
+    const result = request.call(el);
+    if (result && result.catch) result.catch(() => {});
+  } catch {
+    // Fullscreen can be blocked (iOS Safari, permissions policy, etc.) - the
+    // game still works fine windowed, so just ignore it.
+  }
+}
+
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
+// Every image the selected theme actually needs during play: board
+// background, all card art, deck backs, tokens, the common gem icons, every
+// noble portrait for the theme (the 3 used are only picked once the game
+// state is built), and the two avatars shown in-game.
+function themeAssetUrls(theme) {
+  const themeId = theme.id;
+  const urls = [theme.board];
+  for (const tier of [1, 2, 3]) {
+    THEME_CARD_IMAGES[themeId][tier].forEach((name, index) => {
+      const serial = String(index + 1).padStart(2, "0");
+      urls.push(asset(`${themeId}/cards/l${tier}/${themeId}_l${tier}_${serial}_${name}.webp`));
+    });
+    urls.push(deckImage(theme, tier));
+  }
+  TOKEN_COLORS.forEach((color) => urls.push(tokenImage(theme, color)));
+  COLORS.forEach((color) => urls.push(gemImage(color)));
+  for (let i = 1; i <= 10; i++) urls.push(nobleImage(theme, { id: `n${i}` }));
+  urls.push(AVATARS[state.setup.avatar].src, CPU_AVATAR.src);
+  return urls;
+}
+
 function startLoading() {
+  requestFullscreenSafe();
   playSfx("turn");
   startBgmForTheme(state.setup.theme);
   document.querySelector("#titleScreen").classList.add("hidden");
   document.querySelector("#loadingScreen").classList.remove("hidden");
-  let progress = 0;
+
   const bar = document.querySelector("#loadingBar");
   const text = document.querySelector("#loadingText");
-  const steps = ["카드 데이터를 섞는 중...", "테마 색상을 적용하는 중...", "AI 전략을 준비하는 중...", "게임판을 펼치는 중..."];
-  const timer = setInterval(() => {
-    progress += 22 + Math.random() * 10;
-    bar.style.width = `${Math.min(progress, 100)}%`;
-    text.textContent = steps[Math.min(steps.length - 1, Math.floor(progress / 28))];
-    if (progress >= 100) {
-      clearInterval(timer);
-      startGame();
-    }
-  }, 130);
+  const urls = themeAssetUrls(THEMES[state.setup.theme]);
+  const total = urls.length;
+  let loaded = 0;
+  const renderProgress = () => {
+    const pct = Math.min(100, Math.round((loaded / total) * 100));
+    bar.style.width = `${pct}%`;
+    text.textContent = `게임 이미지를 불러오는 중... (${loaded}/${total})`;
+  };
+  renderProgress();
+
+  let advanced = false;
+  const proceed = () => {
+    if (advanced) return;
+    advanced = true;
+    text.textContent = "게임판을 펼치는 중...";
+    bar.style.width = "100%";
+    startGame();
+  };
+
+  Promise.all(urls.map((url) => preloadImage(url).then(() => {
+    loaded += 1;
+    renderProgress();
+  }))).then(proceed);
+  // Safety net: never strand the player on the loading screen if an asset's
+  // request stalls without ever firing load/error.
+  setTimeout(proceed, 15000);
 }
 
 function startGame() {
