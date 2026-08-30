@@ -354,21 +354,36 @@ function playBgmIndex(index) {
   bgm.currentAudio = audio;
   audio.currentTime = 0;
   audio.volume = 0;
+
+  // Safety net: if the duration-based scheduling in scheduleNextBgm() never
+  // fires for this track (its metadata never resolves, a timer gets
+  // dropped, ...) or the track fails to load/decode partway through, still
+  // move the playlist forward instead of leaving BGM stuck in silence for
+  // the rest of the game. Reassigned fresh every call so a track being
+  // replayed later in the loop always points at the current index.
+  const advance = () => {
+    if (bgm.currentAudio !== audio || !state.settings.bgmEnabled) return;
+    playBgmIndex((index + 1) % bgm.audios.length);
+  };
+  audio.onended = advance;
+  audio.onerror = advance;
+
   audio.play().then(() => {
     fadeAudio(audio, 0, bgmTargetVolume(), BGM_FADE_SECONDS);
     scheduleNextBgm(audio, index);
   }).catch(() => {
-    bgm.playing = false;
+    // Autoplay/network hiccup on this specific track - don't give up on BGM
+    // entirely, just try to move on.
+    setBgmTimeout(advance, 1500);
   });
 }
 
 function scheduleNextBgm(audio, index) {
   const arm = () => {
     const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-    if (duration <= BGM_OVERLAP_SECONDS + 1) {
-      audio.onended = () => playBgmIndex((index + 1) % bgm.audios.length);
-      return;
-    }
+    // Too short to crossfade before it naturally ends - the onended safety
+    // net set up in playBgmIndex() already advances the playlist for it.
+    if (duration <= BGM_OVERLAP_SECONDS + 1) return;
     bgm.nextTimer = setBgmTimeout(() => {
       const nextIndex = (index + 1) % bgm.audios.length;
       if (state.settings.bgmEnabled) playBgmIndex(nextIndex);
