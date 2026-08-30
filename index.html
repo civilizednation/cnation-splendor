@@ -40,7 +40,10 @@
         </section>
       </div>
 
-      <button id="startButton" class="primary start-button">게임 시작</button>
+      <div class="title-actions">
+        <button id="titleSettingsButton" class="ghost settings-button" aria-label="설정">⚙</button>
+        <button id="startButton" class="primary start-button">게임 시작</button>
+      </div>
     </section>
 
     <section id="loadingScreen" class="loading-screen hidden">
@@ -67,6 +70,14 @@
         </div>
 
         <footer class="player-panel player-card" id="playerPanel"></footer>
+      </div>
+    </section>
+
+    <section id="exitScreen" class="exit-screen hidden">
+      <div class="exit-card">
+        <strong>게임을 종료했습니다</strong>
+        <span>이 창을 닫아주세요.</span>
+        <button id="reopenGame" class="ghost">다시 시작하기</button>
       </div>
     </section>
   </main>

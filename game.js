@@ -145,6 +145,7 @@ const BGM_TRACKS = {
 const BGM_FADE_SECONDS = 2;
 const BGM_OVERLAP_SECONDS = 3;
 const SFX_OUTPUT_GAIN = 3.9;
+const BGM_OUTPUT_GAIN = 0.8;
 
 const state = {
   setup: { difficulty: "normal", theme: "classic", avatar: 3 },
@@ -153,7 +154,7 @@ const state = {
   selectedCard: null,
   selectedReserved: null,
   pending: null,
-  settings: { sfxVolume: 0.7, sfxEnabled: true, bgmVolume: 0.7, bgmEnabled: true }
+  settings: { sfxVolume: 0.6, sfxEnabled: true, bgmVolume: 0.6, bgmEnabled: true }
 };
 
 const sfx = {
@@ -292,7 +293,7 @@ function sfxMasterVolume() {
 }
 
 function bgmTargetVolume() {
-  return state.settings.bgmEnabled ? state.settings.bgmVolume : 0;
+  return state.settings.bgmEnabled ? state.settings.bgmVolume * BGM_OUTPUT_GAIN : 0;
 }
 
 function createBgmAudio(src, index) {
@@ -651,6 +652,11 @@ function bindSetupEvents() {
   bindChoiceGroup("#themeChoices", "theme", "theme");
   bindChoiceGroup("#avatarChoices", "avatar", "avatar", Number);
   document.querySelector("#startButton").addEventListener("click", startLoading);
+  document.querySelector("#titleSettingsButton").addEventListener("click", () => {
+    playSfx("ui");
+    showSettings({ context: "title" });
+  });
+  document.querySelector("#reopenGame").addEventListener("click", () => location.reload());
 }
 
 function requestFullscreenSafe() {
@@ -890,7 +896,7 @@ function renderPlayerPanel(key, root) {
     </div>
     <div class="score-shield"><span>점수</span><strong data-field="score"></strong></div>
     <div class="panel-block resource-block"><div class="panel-title">보석 현황</div><div data-field="resources"></div></div>
-    <div class="stat-line"><span>예약</span><strong data-field="reserved"></strong></div>
+    <div class="stat-line stat-line-reserved"><span>예약</span><strong data-field="reserved"></strong></div>
     <div class="stat-line"><span>개발 카드</span><strong data-field="developments"></strong></div>
   `);
   root.querySelector('[data-field="score"]').textContent = score(player);
@@ -1508,7 +1514,8 @@ function endGame() {
   };
 }
 
-function showSettings() {
+function showSettings(options = {}) {
+  const context = options.context || "game";
   const modal = document.querySelector("#modalLayer");
   modal.classList.remove("hidden");
   modal.innerHTML = `
@@ -1521,7 +1528,7 @@ function showSettings() {
       <label class="stat-line settings-line"><span>효과음 볼륨</span><input id="sfxVolume" type="range" min="0" max="100" value="${Math.round(state.settings.sfxVolume * 100)}" ${state.settings.sfxEnabled ? "" : "disabled"}></label>
       <div class="modal-actions">
         <button class="ghost" id="quitGame">게임 종료</button>
-        <button class="primary" id="continueGame">계속하기</button>
+        <button class="primary" id="continueGame">${context === "title" ? "닫기" : "계속하기"}</button>
       </div>
     </div>
   `;
@@ -1554,8 +1561,25 @@ function showSettings() {
       playSfx("ui");
       modal.classList.add("hidden");
     }
-    if (event.target.closest("#quitGame")) location.reload();
+    if (event.target.closest("#quitGame")) {
+      if (context === "title") exitGameCompletely();
+      else location.reload();
+    }
   };
+}
+
+// Only reachable from the title screen's settings, before any game has
+// started - "게임 종료" there means leave the app entirely, not restart a
+// round. Browsers only let a page close tabs it opened itself via script,
+// so window.close() is best-effort; the exit screen is the real fallback.
+function exitGameCompletely() {
+  stopBgm();
+  document.querySelector("#modalLayer").classList.add("hidden");
+  document.querySelector("#titleScreen").classList.add("hidden");
+  document.querySelector("#loadingScreen").classList.add("hidden");
+  document.querySelector("#gameScreen").classList.add("hidden");
+  document.querySelector("#exitScreen").classList.remove("hidden");
+  try { window.close(); } catch {}
 }
 
 setupUI();
