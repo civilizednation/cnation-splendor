@@ -157,6 +157,10 @@ const BGM_TRACKS = {
   snack: [1, 2, 3, 4].map((n) => `./assets/audio/bgm/128k/snack/snack_bgm_0${n}.mp3`),
   world: [1, 2, 3, 4].map((n) => `./assets/audio/bgm/128k/world/world_bgm_0${n}.mp3`)
 };
+const RESULT_TRACKS = {
+  win: "./assets/audio/bgm/result/victory.mp3",
+  lose: "./assets/audio/bgm/result/defeat.mp3"
+};
 const BGM_FADE_SECONDS = 2;
 const BGM_OVERLAP_SECONDS = 3;
 const SFX_OUTPUT_GAIN = 3.9;
@@ -189,6 +193,7 @@ const bgm = {
   remainderPreloaded: false
 };
 let setupEventsBound = false;
+let resultAudio = null;
 
 function emptyTokens() {
   return { white: 0, blue: 0, green: 0, red: 0, black: 0, gold: 0 };
@@ -288,21 +293,6 @@ function playSfx(kind) {
     error: () => {
       tone({ frequency: 180, duration: 0.09, type: "sawtooth", volume: 0.07 });
       tone({ frequency: 140, start: 0.07, duration: 0.1, type: "sawtooth", volume: 0.055 });
-    },
-    win: () => {
-      // Bright rising C-E-G-A-C fanfare (~1.6s) with a soft upper-octave
-      // shimmer on each note for a bell-like, dignified victory feel.
-      [523.25, 659.25, 783.99, 880, 1046.5].forEach((frequency, i) => {
-        const start = i * 0.26;
-        tone({ frequency, start, duration: 0.55, type: "triangle", volume: 0.14 });
-        tone({ frequency: frequency * 2, start: start + 0.02, duration: 0.4, type: "sine", volume: 0.05 });
-      });
-    },
-    lose: () => {
-      // Gentle descending G-E-D-C cadence (~1.45s) - subdued, not harsh.
-      [392, 329.63, 293.66, 261.63].forEach((frequency, i) => {
-        tone({ frequency, start: i * 0.3, duration: 0.55, type: "triangle", volume: 0.1 });
-      });
     }
   };
   patterns[kind]?.();
@@ -442,8 +432,10 @@ function fadeAudio(audio, from, to, seconds, pauseWhenDone = false) {
 function updateBgmVolume() {
   if (!state.settings.bgmEnabled) {
     pauseBgm();
+    if (resultAudio) resultAudio.pause();
     return;
   }
+  if (resultAudio && !resultAudio.paused) resultAudio.volume = bgmTargetVolume();
   if (!bgm.playing && state.game) {
     startBgmForTheme(state.game.theme.id);
     preloadBgmRemainder();
@@ -478,6 +470,26 @@ function stopBgm() {
   bgm.currentAudio = null;
   bgm.playing = false;
   bgm.remainderPreloaded = false;
+}
+
+// Victory/defeat use a short one-shot music cue (not part of the looping
+// theme playlist), so they get their own tiny standalone player instead of
+// going through the bgm.audios/scheduleNextBgm machinery.
+function playResultMusic(kind) {
+  stopResultMusic();
+  const src = RESULT_TRACKS[kind];
+  if (!src || !state.settings.bgmEnabled) return;
+  resultAudio = new Audio(src);
+  resultAudio.volume = bgmTargetVolume();
+  resultAudio.play().catch(() => {});
+}
+
+function stopResultMusic(fadeOut = false) {
+  if (!resultAudio) return;
+  const audio = resultAudio;
+  resultAudio = null;
+  if (fadeOut) fadeAudio(audio, audio.volume, 0, 0.6, true);
+  else audio.pause();
 }
 
 function shuffle(items) {
@@ -1532,7 +1544,9 @@ function endGame() {
   // suddenly crossfade to a new track right after the game has ended.
   clearBgmTimeouts();
   if (bgm.currentAudio) fadeAudio(bgm.currentAudio, bgm.currentAudio.volume, 0, 1.2, true);
-  playSfx(result.includes("승리") && result.startsWith("당신") ? "win" : result.includes("CPU") ? "lose" : "turn");
+  if (result.startsWith("당신")) playResultMusic("win");
+  else if (result.includes("CPU")) playResultMusic("lose");
+  else playSfx("turn");
   game.log = result;
   render();
   const modal = document.querySelector("#modalLayer");
@@ -1550,7 +1564,10 @@ function endGame() {
   `;
   modal.onclick = (event) => {
     if (event.target.closest("#restartGame")) location.reload();
-    if (event.target.closest("#closeResult")) modal.classList.add("hidden");
+    if (event.target.closest("#closeResult")) {
+      modal.classList.add("hidden");
+      stopResultMusic(true);
+    }
   };
 }
 
