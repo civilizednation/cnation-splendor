@@ -1,11 +1,13 @@
 "use strict";
 
-// The game is authored against a fixed 1600x900 design canvas (#stage in
-// index.html). Instead of separate PC/tablet/phone layouts, we measure the
-// real viewport and uniformly scale that single canvas to fit, so the exact
+// The game is authored against a fixed 1360x900 design canvas (#stage in
+// index.html), trimmed to the board's real content width so tablets (which
+// are narrower relative to their height than a laptop) need less shrinking
+// to fit. Instead of separate PC/tablet/phone layouts, we measure the real
+// viewport and uniformly scale that single canvas to fit, so the exact
 // same layout the game was designed with just shrinks or grows to fit any
 // landscape screen (laptop, tablet, phone) without a manual device choice.
-const DESIGN_WIDTH = 1600;
+const DESIGN_WIDTH = 1360;
 const DESIGN_HEIGHT = 900;
 const MAX_STAGE_SCALE = 1.5;
 
