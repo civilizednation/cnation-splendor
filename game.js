@@ -290,14 +290,19 @@ function playSfx(kind) {
       tone({ frequency: 140, start: 0.07, duration: 0.1, type: "sawtooth", volume: 0.055 });
     },
     win: () => {
-      tone({ frequency: 523, duration: 0.09, type: "triangle", volume: 0.11 });
-      tone({ frequency: 659, start: 0.08, duration: 0.09, type: "triangle", volume: 0.11 });
-      tone({ frequency: 784, start: 0.16, duration: 0.12, type: "triangle", volume: 0.11 });
-      tone({ frequency: 1046, start: 0.27, duration: 0.2, type: "sine", volume: 0.1 });
+      // Bright rising C-E-G-A-C fanfare (~1.6s) with a soft upper-octave
+      // shimmer on each note for a bell-like, dignified victory feel.
+      [523.25, 659.25, 783.99, 880, 1046.5].forEach((frequency, i) => {
+        const start = i * 0.26;
+        tone({ frequency, start, duration: 0.55, type: "triangle", volume: 0.14 });
+        tone({ frequency: frequency * 2, start: start + 0.02, duration: 0.4, type: "sine", volume: 0.05 });
+      });
     },
     lose: () => {
-      tone({ frequency: 330, duration: 0.11, type: "triangle", volume: 0.09 });
-      tone({ frequency: 247, start: 0.11, duration: 0.16, type: "triangle", volume: 0.08 });
+      // Gentle descending G-E-D-C cadence (~1.45s) - subdued, not harsh.
+      [392, 329.63, 293.66, 261.63].forEach((frequency, i) => {
+        tone({ frequency, start: i * 0.3, duration: 0.55, type: "triangle", volume: 0.1 });
+      });
     }
   };
   patterns[kind]?.();
@@ -1522,6 +1527,11 @@ function endGame() {
   let result = "무승부입니다.";
   if (playerScore > cpuScore || (playerScore === cpuScore && playerCards < cpuCards)) result = "당신의 승리입니다!";
   if (cpuScore > playerScore || (playerScore === cpuScore && cpuCards < playerCards)) result = "CPU의 승리입니다.";
+  // Fade the theme loop out and cancel its next-track timer so the game's
+  // still-playing BGM doesn't compete with the victory/defeat fanfare, or
+  // suddenly crossfade to a new track right after the game has ended.
+  clearBgmTimeouts();
+  if (bgm.currentAudio) fadeAudio(bgm.currentAudio, bgm.currentAudio.volume, 0, 1.2, true);
   playSfx(result.includes("승리") && result.startsWith("당신") ? "win" : result.includes("CPU") ? "lose" : "turn");
   game.log = result;
   render();
