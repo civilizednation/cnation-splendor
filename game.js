@@ -27,9 +27,24 @@ function fitStageToViewport() {
   stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
 }
 
+// Entering/leaving fullscreen changes the viewport (the address bar's space
+// gets reclaimed) but doesn't reliably fire a plain "resize" event across
+// browsers, and the fullscreen transition can still be animating when the
+// change event fires, so window.innerWidth/Height briefly lag behind. Recheck
+// a few times over the following moment rather than trusting a single read.
+function scheduleFitStageToViewport() {
+  fitStageToViewport();
+  requestAnimationFrame(fitStageToViewport);
+  setTimeout(fitStageToViewport, 150);
+  setTimeout(fitStageToViewport, 400);
+}
+
 window.addEventListener("resize", fitStageToViewport);
 window.addEventListener("orientationchange", () => setTimeout(fitStageToViewport, 60));
 if (window.visualViewport) window.visualViewport.addEventListener("resize", fitStageToViewport);
+["fullscreenchange", "webkitfullscreenchange", "msfullscreenchange"].forEach((eventName) =>
+  document.addEventListener(eventName, scheduleFitStageToViewport)
+);
 fitStageToViewport();
 
 const COLORS = ["white", "blue", "green", "red", "black"];
@@ -665,7 +680,7 @@ function requestFullscreenSafe() {
   if (!request) return;
   try {
     const result = request.call(el);
-    if (result && result.catch) result.catch(() => {});
+    if (result && result.then) result.then(scheduleFitStageToViewport).catch(() => {});
   } catch {
     // Fullscreen can be blocked (iOS Safari, permissions policy, etc.) - the
     // game still works fine windowed, so just ignore it.
