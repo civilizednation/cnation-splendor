@@ -6,6 +6,24 @@
   <title>CNATION Splendor</title>
   <meta name="description" content="1:1 AI로 즐기는 테마형 Splendor 웹게임">
   <link rel="stylesheet" href="./style.css">
+
+  <!--
+    iOS Safari/Chrome (both WebKit) only support the standard Fullscreen API
+    from iOS 16.4 on; before that (and even after, since users may just tap
+    the icon instead of tapping "게임 시작"), launching from a Home Screen
+    icon added via Safari's Share > "홈 화면에 추가" is the reliable way to
+    get a chrome-free, standalone window - these tags are what make that
+    standalone launch actually hide Safari's UI and use our icon/name.
+  -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./assets/icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="./assets/icons/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#3a2313">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Splendor">
 </head>
 <body>
   <div id="portraitGate" class="portrait-gate">

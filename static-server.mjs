@@ -12,7 +12,8 @@ const types = {
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".mp3": "audio/mpeg",
-  ".wav": "audio/wav"
+  ".wav": "audio/wav",
+  ".json": "application/json; charset=utf-8"
 };
 
 createServer(async (req, res) => {
