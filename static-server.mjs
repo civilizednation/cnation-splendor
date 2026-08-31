@@ -13,7 +13,8 @@ const types = {
   ".svg": "image/svg+xml",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
-  ".json": "application/json; charset=utf-8"
+  ".json": "application/json; charset=utf-8",
+  ".woff2": "font/woff2"
 };
 
 createServer(async (req, res) => {
