@@ -904,6 +904,118 @@ function payFor(card, player, bank) {
   bank.gold += goldNeeded;
 }
 
+// ---- Motion FX ---------------------------------------------------------
+// Ghost-clone flights layered on top of the render() cycle. The real DOM
+// (counts, slots, market cards) always updates instantly via render(); these
+// are purely decorative overlays that fly a cloned visual from where an
+// action started to where it landed, then remove themselves. Kept short so
+// only the *direction* of movement reads, not a lingering flourish.
+const FLY_MS = 300;
+const FLIP_MS = 340;
+
+function cloneFlying(el) {
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const ghost = el.cloneNode(true);
+  ghost.removeAttribute("id");
+  Object.assign(ghost.style, {
+    position: "fixed",
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: "0",
+    zIndex: "9999",
+    pointerEvents: "none",
+    transition: "none"
+  });
+  ghost.classList.add("fly-ghost");
+  if ("disabled" in ghost) ghost.disabled = true;
+  document.body.appendChild(ghost);
+  return { ghost, rect };
+}
+
+function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale = null, delay = 0 } = {}) {
+  const toRect = toEl && typeof toEl.getBoundingClientRect === "function" ? toEl.getBoundingClientRect() : toEl;
+  if (!ghost) return;
+  if (!fromRect || !toRect || !toRect.width) {
+    ghost.remove();
+    return;
+  }
+  const dx = (toRect.left + toRect.width / 2) - (fromRect.left + fromRect.width / 2);
+  const dy = (toRect.top + toRect.height / 2) - (fromRect.top + fromRect.height / 2);
+  const scale = endScale != null ? endScale : Math.max(.3, Math.min(1.2, toRect.width / fromRect.width));
+  const anim = ghost.animate([
+    { transform: "translate(0,0) scale(1)", opacity: 1 },
+    { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: fade ? 0 : 1 }
+  ], { duration, delay, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" });
+  const cleanup = () => ghost.remove();
+  anim.onfinish = cleanup;
+  anim.oncancel = cleanup;
+}
+
+function flyElementTo(sourceEl, targetEl, options) {
+  const clone = cloneFlying(sourceEl);
+  if (!clone) return;
+  flyTo(clone.ghost, clone.rect, targetEl, options);
+}
+
+// Flies one coin per entry in `colors` (repeat a color for a 2x pick) from
+// its bank pile to the matching resource icon in the given panel.
+function flyTokensTo(colors, panelSelector, options = {}) {
+  colors.forEach((color, i) => {
+    const source = document.querySelector(`#bank [data-token="${color}"] .coin`);
+    const target = document.querySelector(`${panelSelector} [data-color="${color}"] .resource-token`);
+    if (source && target) flyElementTo(source, target, { fade: false, endScale: .85, delay: i * 50, ...options });
+  });
+}
+
+// Flies a face-down card from a tier's deck pile to `toEl` (an element or a
+// plain rect), flipping to the card's real front face at the midpoint.
+function flipCardTo(tier, card, toEl) {
+  const deckEl = document.querySelector(`[data-reserve-deck="${tier}"]`);
+  const toRect = toEl && typeof toEl.getBoundingClientRect === "function" ? toEl.getBoundingClientRect() : toEl;
+  if (!deckEl || !toRect || !toRect.width) return;
+  const fromRect = deckEl.getBoundingClientRect();
+  const theme = state.game.theme;
+  const deckColors = theme.deck[tier - 1];
+  const artColors = theme.art[tier - 1];
+  const ghost = document.createElement("div");
+  ghost.className = "fly-ghost";
+  Object.assign(ghost.style, {
+    position: "fixed",
+    left: `${fromRect.left}px`,
+    top: `${fromRect.top}px`,
+    width: `${fromRect.width}px`,
+    height: `${fromRect.height}px`,
+    zIndex: "9999",
+    pointerEvents: "none",
+    borderRadius: "7px",
+    border: "1px solid rgba(0,0,0,.16)",
+    boxShadow: "0 4px 0 rgba(92,52,28,.26), 0 7px 10px rgba(61,31,15,.16)",
+    backgroundImage: `linear-gradient(160deg, ${deckColors[0]}, ${deckColors[1]}), url('${deckImage(theme, tier)}')`,
+    backgroundSize: "cover",
+    backgroundPosition: "center"
+  });
+  document.body.appendChild(ghost);
+  const dx = (toRect.left + toRect.width / 2) - (fromRect.left + fromRect.width / 2);
+  const dy = (toRect.top + toRect.height / 2) - (fromRect.top + fromRect.height / 2);
+  const sx = toRect.width / fromRect.width;
+  const sy = toRect.height / fromRect.height;
+  const anim = ghost.animate([
+    { transform: "translate(0,0) scale(1,1)" },
+    { transform: `translate(${dx / 2}px, ${dy / 2}px) scale(0, ${(1 + sy) / 2})` },
+    { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` }
+  ], { duration: FLIP_MS, easing: "ease-in-out" });
+  setTimeout(() => {
+    ghost.style.backgroundImage = `linear-gradient(160deg, ${artColors[0]}, ${artColors[1]}), url('${cardImage(theme, card)}')`;
+  }, FLIP_MS / 2);
+  const cleanup = () => ghost.remove();
+  anim.onfinish = cleanup;
+  anim.oncancel = cleanup;
+}
+
 function render() {
   if (!state.game) return;
   renderTopbar();
@@ -1056,11 +1168,11 @@ function renderReservedSlots(player) {
   const theme = state.game.theme;
   return [0, 1, 2].map((slot) => {
     const card = player.reserved[slot];
-    if (!card) return `<span class="reserved-slot"></span>`;
+    if (!card) return `<span class="reserved-slot" data-slot="${slot}"></span>`;
     const art = theme.art[card.tier - 1];
     const selected = state.selectedReserved === slot;
     return `
-      <button class="reserved-card ${selected ? "selected" : ""}" data-reserved-index="${slot}" style="--art-a:${art[0]};--art-b:${art[1]};--card-image:url('${cardImage(theme, card)}')" title="예약 카드">
+      <button class="reserved-card ${selected ? "selected" : ""}" data-reserved-index="${slot}" data-slot="${slot}" style="--art-a:${art[0]};--art-b:${art[1]};--card-image:url('${cardImage(theme, card)}')" title="예약 카드">
         <div class="card-band"></div>
         <div class="points">${card.points || ""}</div>
         <div class="bonus-dot" style="--gem:${GEM_HEX[card.bonus]};--gem-image:url('${gemImage(card.bonus)}')"></div>
@@ -1077,7 +1189,7 @@ function gemRow(tokens, colors) {
 function resourceGrid(player, compact = false) {
   if (compact) {
     return `<div class="resource-grid compact">${TOKEN_COLORS.map((color) => `
-      <div class="resource-compact-row" title="${GEM_LABEL[color]}">
+      <div class="resource-compact-row" data-color="${color}" title="${GEM_LABEL[color]}">
         <span class="resource-token" style="--gem:${GEM_HEX[color]};--token-image:url('${tokenImage(state.game.theme, color)}')"></span>
         ${resourceCounts(player, color)}
       </div>
@@ -1086,7 +1198,7 @@ function resourceGrid(player, compact = false) {
   return `
     <div class="resource-split resource-split-combined">
       <div class="token-track token-track-combined">${TOKEN_COLORS.map((color) => `
-        <span class="resource-token-stack" title="${GEM_LABEL[color]} 영구 보너스 + 보유 토큰">
+        <span class="resource-token-stack" data-color="${color}" title="${GEM_LABEL[color]} 영구 보너스 + 보유 토큰">
           <span class="resource-token" style="--gem:${GEM_HEX[color]};--token-image:url('${tokenImage(state.game.theme, color)}')"></span>
           ${resourceCounts(player, color)}
         </span>
@@ -1243,6 +1355,7 @@ function takeTokens() {
   }
   playSfx("token");
   const player = state.game.players.player;
+  const picks = COLORS.flatMap((c) => Array(state.selectedTokens[c]).fill(c));
   for (const color of COLORS) {
     player.tokens[color] += state.selectedTokens[color];
     state.game.bank[color] -= state.selectedTokens[color];
@@ -1250,27 +1363,35 @@ function takeTokens() {
   state.game.log = "토큰을 가져왔습니다.";
   clearSelection();
   afterMainAction("player");
+  flyTokensTo(picks, "#playerPanel");
 }
 
 function buyMarket() {
   const { tier, index, card } = state.selectedCard;
+  const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
   playSfx("buy");
   buyCard(card, state.game.players.player);
   state.game.market[tier][index] = state.game.decks[tier].pop() || null;
   state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
   clearSelection();
   afterMainAction("player");
+  if (marketClone) {
+    flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
+    if (state.game.market[tier][index]) flipCardTo(tier, state.game.market[tier][index], marketClone.rect);
+  }
 }
 
 function buyReserved() {
   const player = state.game.players.player;
   const card = player.reserved[state.selectedReserved];
+  const reservedClone = cloneFlying(document.querySelector(`#playerPanel [data-slot="${state.selectedReserved}"]`));
   playSfx("buy");
   buyCard(card, player);
   player.reserved.splice(state.selectedReserved, 1);
   state.game.log = "예약 카드를 구매했습니다.";
   clearSelection();
   afterMainAction("player");
+  if (reservedClone) flyTo(reservedClone.ghost, reservedClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
 }
 
 function buyCard(card, player) {
@@ -1288,6 +1409,8 @@ function reserveMarket() {
     return;
   }
   const { tier, index, card } = state.selectedCard;
+  const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
+  const targetSlot = player.reserved.length;
   playSfx("reserve");
   player.reserved.push(card);
   state.game.market[tier][index] = state.game.decks[tier].pop() || null;
@@ -1295,6 +1418,12 @@ function reserveMarket() {
   state.game.log = "공개 카드를 예약했습니다.";
   clearSelection();
   afterMainAction("player");
+  if (marketClone) {
+    const slotEl = document.querySelector(`#playerPanel [data-slot="${targetSlot}"]`);
+    if (slotEl) flyTo(marketClone.ghost, marketClone.rect, slotEl, { fade: false, endScale: null });
+    else marketClone.ghost.remove();
+    if (state.game.market[tier][index]) flipCardTo(tier, state.game.market[tier][index], marketClone.rect);
+  }
 }
 
 function reserveBlind(tier) {
@@ -1307,12 +1436,16 @@ function reserveBlind(tier) {
     playSfx("error");
     return;
   }
+  const targetSlot = player.reserved.length;
   playSfx("reserve");
-  player.reserved.push(state.game.decks[tier].pop());
+  const card = state.game.decks[tier].pop();
+  player.reserved.push(card);
   takeGoldIfAvailable(player);
   state.game.log = `레벨 ${tier} 덱에서 비공개 예약했습니다.`;
   clearSelection();
   afterMainAction("player");
+  const slotEl = document.querySelector(`#playerPanel [data-slot="${targetSlot}"]`);
+  if (slotEl) flipCardTo(tier, card, slotEl);
 }
 
 function takeGoldIfAvailable(player) {
@@ -1470,30 +1603,42 @@ function cpuTurn() {
   }
   if (buyable.length) {
     const pick = buyable[0];
+    const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${pick.tier}"][data-card-index="${pick.index}"]`));
     buyCard(pick.card, cpu);
     game.market[pick.tier][pick.index] = game.decks[pick.tier].pop() || null;
     game.log = "CPU가 공개 카드를 구매했습니다.";
-    return afterMainAction("cpu");
+    afterMainAction("cpu");
+    if (marketClone) {
+      flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3 });
+      if (game.market[pick.tier][pick.index]) flipCardTo(pick.tier, game.market[pick.tier][pick.index], marketClone.rect);
+    }
+    return;
   }
   if (game.difficulty === "hard" && cpu.reserved.length < 3) {
     const threat = allMarket.filter((x) => canBuy(x.card, game.players.player)).sort((a, b) => cardValue(b.card, game.players.player) - cardValue(a.card, game.players.player))[0];
     if (threat && threat.card.points >= 2) {
+      const rect = document.querySelector(`[data-card-tier="${threat.tier}"][data-card-index="${threat.index}"]`)?.getBoundingClientRect();
       cpu.reserved.push(threat.card);
       game.market[threat.tier][threat.index] = game.decks[threat.tier].pop() || null;
       takeGoldIfAvailable(cpu);
       game.log = "CPU가 위협적인 카드를 예약했습니다.";
-      return afterMainAction("cpu");
+      afterMainAction("cpu");
+      if (rect && game.market[threat.tier][threat.index]) flipCardTo(threat.tier, game.market[threat.tier][threat.index], rect);
+      return;
     }
   }
   const target = allMarket.sort((a, b) => cardValue(b.card, cpu) - cardValue(a.card, cpu))[0]?.card;
   const selected = chooseTokensFor(cpu, target);
   if (validTokenSelection(selected, game.bank)) {
+    const picks = COLORS.flatMap((c) => Array(selected[c]).fill(c));
     for (const color of COLORS) {
       cpu.tokens[color] += selected[color];
       game.bank[color] -= selected[color];
     }
     game.log = "CPU가 토큰을 가져갔습니다.";
-    return afterMainAction("cpu");
+    afterMainAction("cpu");
+    flyTokensTo(picks, "#cpuPanel");
+    return;
   }
   if (cpu.reserved.length < 3 && game.decks[1].length) {
     cpu.reserved.push(game.decks[1].pop());
