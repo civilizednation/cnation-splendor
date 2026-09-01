@@ -1125,7 +1125,7 @@ function renderBank() {
 
 function renderNobles() {
   document.querySelector("#nobles").innerHTML = state.game.nobles.map((noble, index) => `
-    <div class="noble-card" style="--noble-image:url('${nobleImage(state.game.theme, noble)}')">
+    <div class="noble-card" data-noble-id="${noble.id}" style="--noble-image:url('${nobleImage(state.game.theme, noble)}')">
       <div class="points">${noble.points}</div>
       <div class="noble-reqs">${renderCost(noble.req, state.game.theme)}</div>
     </div>
@@ -1521,10 +1521,22 @@ function checkNobles(playerKey) {
   if (eligible.length === 0) return completeAction(playerKey);
   if (eligible.length === 1 || playerKey === "cpu") {
     if (playerKey === "player") playSfx("noble");
-    gainNoble(playerKey, eligible[0]);
-    return completeAction(playerKey);
+    const noble = eligible[0];
+    const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
+    gainNoble(playerKey, noble);
+    completeAction(playerKey);
+    flyNobleGain(nobleClone, playerKey);
+    return;
   }
   showNobleChoice(eligible);
+}
+
+// Flies a cloned noble-card ghost from the nobles rail to whichever side
+// (player or CPU) just gained it.
+function flyNobleGain(nobleClone, playerKey) {
+  if (!nobleClone) return;
+  const target = document.querySelector(playerKey === "player" ? "#playerPanel .portrait" : "#cpuPanel .portrait");
+  flyTo(nobleClone.ghost, nobleClone.rect, target, { fade: true, endScale: .3 });
 }
 
 function showNobleChoice(eligible) {
@@ -1544,11 +1556,14 @@ function showNobleChoice(eligible) {
     const button = event.target.closest("[data-noble]");
     if (!button) return;
     playSfx("noble");
-    gainNoble("player", eligible.find((noble) => noble.id === button.dataset.noble));
+    const noble = eligible.find((item) => item.id === button.dataset.noble);
+    const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
+    gainNoble("player", noble);
     modal.classList.add("hidden");
     state.pending = null;
     completeAction("player");
     render();
+    flyNobleGain(nobleClone, "player");
   };
 }
 
