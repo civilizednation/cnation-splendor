@@ -1016,6 +1016,21 @@ function flipCardTo(tier, card, toEl) {
   anim.oncancel = cleanup;
 }
 
+// Leaves a market slot visibly empty for `delay`ms (the time the bought/
+// reserved card's own flight takes to clear it) before dropping the next
+// card from that tier's deck into it, flying/flipping it in from the deck
+// pile - so the slot genuinely reads as "card leaves -> empty -> new card
+// arrives" instead of the replacement popping in instantly underneath.
+function scheduleMarketRefill(tier, index, card, slotRect, delay = FLY_MS) {
+  if (!card) return;
+  setTimeout(() => {
+    if (!state.game) return;
+    state.game.market[tier][index] = card;
+    render();
+    if (slotRect) flipCardTo(tier, card, slotRect);
+  }, delay);
+}
+
 function render() {
   if (!state.game) return;
   renderTopbar();
@@ -1369,16 +1384,15 @@ function takeTokens() {
 function buyMarket() {
   const { tier, index, card } = state.selectedCard;
   const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
+  const nextCard = state.game.decks[tier].pop() || null;
   playSfx("buy");
   buyCard(card, state.game.players.player);
-  state.game.market[tier][index] = state.game.decks[tier].pop() || null;
+  state.game.market[tier][index] = null;
   state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
   clearSelection();
   afterMainAction("player");
-  if (marketClone) {
-    flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
-    if (state.game.market[tier][index]) flipCardTo(tier, state.game.market[tier][index], marketClone.rect);
-  }
+  if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
+  scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
 }
 
 function buyReserved() {
@@ -1410,10 +1424,11 @@ function reserveMarket() {
   }
   const { tier, index, card } = state.selectedCard;
   const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
+  const nextCard = state.game.decks[tier].pop() || null;
   const targetSlot = player.reserved.length;
   playSfx("reserve");
   player.reserved.push(card);
-  state.game.market[tier][index] = state.game.decks[tier].pop() || null;
+  state.game.market[tier][index] = null;
   takeGoldIfAvailable(player);
   state.game.log = "공개 카드를 예약했습니다.";
   clearSelection();
@@ -1422,8 +1437,8 @@ function reserveMarket() {
     const slotEl = document.querySelector(`#playerPanel [data-slot="${targetSlot}"]`);
     if (slotEl) flyTo(marketClone.ghost, marketClone.rect, slotEl, { fade: false, endScale: null });
     else marketClone.ghost.remove();
-    if (state.game.market[tier][index]) flipCardTo(tier, state.game.market[tier][index], marketClone.rect);
   }
+  scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
 }
 
 function reserveBlind(tier) {
@@ -1619,26 +1634,26 @@ function cpuTurn() {
   if (buyable.length) {
     const pick = buyable[0];
     const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${pick.tier}"][data-card-index="${pick.index}"]`));
+    const nextCard = game.decks[pick.tier].pop() || null;
     buyCard(pick.card, cpu);
-    game.market[pick.tier][pick.index] = game.decks[pick.tier].pop() || null;
+    game.market[pick.tier][pick.index] = null;
     game.log = "CPU가 공개 카드를 구매했습니다.";
     afterMainAction("cpu");
-    if (marketClone) {
-      flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3 });
-      if (game.market[pick.tier][pick.index]) flipCardTo(pick.tier, game.market[pick.tier][pick.index], marketClone.rect);
-    }
+    if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3 });
+    scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
     return;
   }
   if (game.difficulty === "hard" && cpu.reserved.length < 3) {
     const threat = allMarket.filter((x) => canBuy(x.card, game.players.player)).sort((a, b) => cardValue(b.card, game.players.player) - cardValue(a.card, game.players.player))[0];
     if (threat && threat.card.points >= 2) {
       const rect = document.querySelector(`[data-card-tier="${threat.tier}"][data-card-index="${threat.index}"]`)?.getBoundingClientRect();
+      const nextCard = game.decks[threat.tier].pop() || null;
       cpu.reserved.push(threat.card);
-      game.market[threat.tier][threat.index] = game.decks[threat.tier].pop() || null;
+      game.market[threat.tier][threat.index] = null;
       takeGoldIfAvailable(cpu);
       game.log = "CPU가 위협적인 카드를 예약했습니다.";
       afterMainAction("cpu");
-      if (rect && game.market[threat.tier][threat.index]) flipCardTo(threat.tier, game.market[threat.tier][threat.index], rect);
+      scheduleMarketRefill(threat.tier, threat.index, nextCard, rect);
       return;
     }
   }
