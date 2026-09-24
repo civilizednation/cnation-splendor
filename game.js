@@ -912,6 +912,11 @@ function payFor(card, player, bank) {
 // only the *direction* of movement reads, not a lingering flourish.
 const FLY_MS = 300;
 const FLIP_MS = 340;
+// Buying/gaining a card is a meaningful moment (it's what actually moves
+// cards into someone's hand) so it gets twice the normal flight time - long
+// enough to actually see the card travel from deck/market to the buyer,
+// unlike quick token flourishes.
+const BUY_FLY_MS = FLY_MS * 2;
 
 function cloneFlying(el) {
   if (!el) return null;
@@ -1391,7 +1396,7 @@ function buyMarket() {
   state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
   clearSelection();
   afterMainAction("player");
-  if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
+  if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
   scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
 }
 
@@ -1405,7 +1410,7 @@ function buyReserved() {
   state.game.log = "예약 카드를 구매했습니다.";
   clearSelection();
   afterMainAction("player");
-  if (reservedClone) flyTo(reservedClone.ghost, reservedClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3 });
+  if (reservedClone) flyTo(reservedClone.ghost, reservedClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
 }
 
 function buyCard(card, player) {
@@ -1551,7 +1556,7 @@ function checkNobles(playerKey) {
 function flyNobleGain(nobleClone, playerKey) {
   if (!nobleClone) return;
   const target = document.querySelector(playerKey === "player" ? "#playerPanel .portrait" : "#cpuPanel .portrait");
-  flyTo(nobleClone.ghost, nobleClone.rect, target, { fade: true, endScale: .3 });
+  flyTo(nobleClone.ghost, nobleClone.rect, target, { fade: true, endScale: .3, duration: BUY_FLY_MS });
 }
 
 function showNobleChoice(eligible) {
@@ -1641,7 +1646,7 @@ function cpuTurn() {
     game.market[pick.tier][pick.index] = null;
     game.log = "CPU가 공개 카드를 구매했습니다.";
     afterMainAction("cpu");
-    if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3 });
+    if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
     scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
     return;
   }
