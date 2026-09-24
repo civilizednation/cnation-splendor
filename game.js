@@ -1620,12 +1620,14 @@ function cpuTurn() {
   const game = state.game;
   if (!game || game.current !== "cpu" || game.gameOver) return;
   const cpu = game.players.cpu;
+  const player = game.players.player;
+  const phase = gamePhase(game);
   const allMarket = [3, 2, 1].flatMap((tier) => game.market[tier].map((card, index) => ({ tier, index, card })).filter((x) => x.card));
   const buyableReserved = cpu.reserved.map((card, index) => ({ card, index })).filter((x) => canBuy(x.card, cpu));
-  const buyable = allMarket.filter((x) => canBuy(x.card, cpu)).sort((a, b) => cardValue(b.card, cpu) - cardValue(a.card, cpu));
+  const buyable = allMarket.filter((x) => canBuy(x.card, cpu)).sort((a, b) => cardValue(b.card, cpu, player, phase) - cardValue(a.card, cpu, player, phase));
 
-  if (buyableReserved.length && (game.difficulty !== "easy" || buyableReserved[0].card.points > 0)) {
-    const pick = buyableReserved.sort((a, b) => cardValue(b.card, cpu) - cardValue(a.card, cpu))[0];
+  if (buyableReserved.length) {
+    const pick = buyableReserved.sort((a, b) => cardValue(b.card, cpu, player, phase) - cardValue(a.card, cpu, player, phase))[0];
     buyCard(pick.card, cpu);
     cpu.reserved.splice(pick.index, 1);
     game.log = "CPU가 예약 카드를 구매했습니다.";
@@ -1643,9 +1645,14 @@ function cpuTurn() {
     scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
     return;
   }
-  if (game.difficulty === "hard" && cpu.reserved.length < 3) {
-    const threat = allMarket.filter((x) => canBuy(x.card, game.players.player)).sort((a, b) => cardValue(b.card, game.players.player) - cardValue(a.card, game.players.player))[0];
-    if (threat && threat.card.points >= 2) {
+
+  // Mid/late game only: with nothing to buy, consider denying the player a
+  // card they could snap up next turn - reserving it both blocks them and
+  // banks a card (plus a gold) for the CPU. Skipped in the early phase,
+  // where the priority is steady, cheap building rather than blocking.
+  if (phase !== "early" && cpu.reserved.length < 3) {
+    const threat = pickThreat(cpu, player, phase, allMarket);
+    if (threat) {
       const rect = document.querySelector(`[data-card-tier="${threat.tier}"][data-card-index="${threat.index}"]`)?.getBoundingClientRect();
       const nextCard = game.decks[threat.tier].pop() || null;
       cpu.reserved.push(threat.card);
@@ -1657,8 +1664,9 @@ function cpuTurn() {
       return;
     }
   }
-  const target = allMarket.sort((a, b) => cardValue(b.card, cpu) - cardValue(a.card, cpu))[0]?.card;
-  const selected = chooseTokensFor(cpu, target);
+
+  const targetEntry = pickTarget(cpu, player, phase, allMarket);
+  const selected = chooseTokensFor(cpu, targetEntry?.card, phase);
   if (validTokenSelection(selected, game.bank)) {
     const picks = COLORS.flatMap((c) => Array(selected[c]).fill(c));
     for (const color of COLORS) {
@@ -1679,25 +1687,90 @@ function cpuTurn() {
   completeAction("cpu");
 }
 
-function cardValue(card, player) {
-  const noblePressure = state.game.nobles.reduce((sum, noble) => sum + (noble.req[card.bonus] || 0), 0);
-  const affordability = Object.entries(card.cost).reduce((sum, [color, value]) => sum + Math.max(0, value - player.bonuses[color] - player.tokens[color]), 0);
-  const difficultyBoost = state.game.difficulty === "hard" ? noblePressure * .25 : 0;
-  return card.points * 3 + difficultyBoost + (5 - affordability) + player.bonuses[card.bonus] * .25;
+// Early/mid/late reads off how much has actually happened on the board
+// (combined developments bought, or someone closing in on 15) rather than a
+// raw turn count, so it adapts to how fast the game is actually moving.
+function gamePhase(game) {
+  const totalDevs = game.players.player.developments.length + game.players.cpu.developments.length;
+  const maxScore = Math.max(score(game.players.player), score(game.players.cpu));
+  if (game.endTriggered || maxScore >= 10) return "late";
+  if (totalDevs >= 6) return "mid";
+  return "early";
 }
 
-function chooseTokensFor(player, target) {
+// How much a noble that wants `card`'s bonus color is worth chasing right
+// now - zero in the early phase (nobles aren't a goal yet), and scaled by
+// how close `player` already is to qualifying otherwise.
+function nobleAffinity(card, player, phase) {
+  if (phase === "early") return 0;
+  let best = 0;
+  for (const noble of state.game.nobles) {
+    if (!(noble.req[card.bonus] > 0)) continue;
+    const remaining = Object.entries(noble.req).reduce((sum, [color, need]) => sum + Math.max(0, need - player.bonuses[color]), 0);
+    if (remaining <= 0 || remaining > 6) continue;
+    best = Math.max(best, 7 - remaining);
+  }
+  return best * (phase === "late" ? 0.55 : 0.35);
+}
+
+function cardValue(card, player, opponent, phase = "mid") {
+  const affordability = Object.entries(card.cost).reduce((sum, [color, value]) => sum + Math.max(0, value - player.bonuses[color] - player.tokens[color]), 0);
+  // Early: don't chase points, chase whatever is cheap and buildable now.
+  // Mid/late: points matter increasingly more, since the endgame is a race
+  // to 15.
+  const pointsWeight = phase === "early" ? 1.1 : phase === "mid" ? 2.2 : 3.2;
+  const reachBonus = Math.max(0, 5 - affordability) * (phase === "early" ? 1.4 : 0.9);
+  const synergy = (player.bonuses[card.bonus] || 0) * (phase === "early" ? 0.5 : 0.25);
+  const buildBonus = phase === "early" && card.points === 0 ? 1.4 : 0;
+  // Considering the opponent's board: a card they could buy right now is
+  // worth more to *us* too, since buying or reserving it first denies them.
+  const denial = opponent && canBuy(card, opponent) ? card.points * 0.6 + 0.5 : 0;
+  return card.points * pointsWeight + reachBonus + synergy + buildBonus + nobleAffinity(card, player, phase) + denial;
+}
+
+// Recomputed fresh every call (never a fixed, sticky target) from whatever
+// is on the board right now for both sides, so the CPU's goal shifts turn
+// to turn as the market and both players' progress change.
+function pickTarget(cpu, player, phase, allMarket) {
+  if (!allMarket.length) return null;
+  return allMarket
+    .map((x) => ({ ...x, value: cardValue(x.card, cpu, player, phase) }))
+    .sort((a, b) => b.value - a.value)[0];
+}
+
+// A reserve-to-deny is only worth it (mid/late game) when the card is a
+// real prize for the player - decent points, or it advances a noble they're
+// closing in on - not just anything they happen to be able to afford.
+function pickThreat(cpu, player, phase, allMarket) {
+  const threat = allMarket
+    .filter((x) => canBuy(x.card, player))
+    .sort((a, b) => cardValue(b.card, player, cpu, phase) - cardValue(a.card, player, cpu, phase))[0];
+  if (!threat) return null;
+  const worthDenying = threat.card.points >= 2 || nobleAffinity(threat.card, player, phase) >= 3;
+  return worthDenying ? threat : null;
+}
+
+// Defaults to Splendor's "take 3 different colors" action - the request is
+// to prefer breadth over the old habit of rushing 2-of-one-color whenever
+// merely legal. A 2-of-one-color pick only happens when the target realistically
+// needs just one more color (so "3 different" isn't even an option to give up).
+function chooseTokensFor(player, target, phase = "mid") {
   const selected = emptyTokens();
   if (!target) return selected;
   const needs = COLORS.map((color) => ({
     color,
     need: Math.max(0, (target.cost[color] || 0) - player.bonuses[color] - player.tokens[color])
   })).filter((x) => x.need > 0 && state.game.bank[x.color] > 0).sort((a, b) => b.need - a.need);
-  if (needs[0] && needs[0].need >= 2 && state.game.bank[needs[0].color] >= 4 && state.game.difficulty !== "easy") {
+
+  if (needs.length >= 3) {
+    for (const item of needs.slice(0, 3)) selected[item.color] = 1;
+    return selected;
+  }
+  if (needs.length === 1 && needs[0].need >= 2 && state.game.bank[needs[0].color] >= 4) {
     selected[needs[0].color] = 2;
     return selected;
   }
-  for (const item of needs.slice(0, 3)) selected[item.color] = 1;
+  for (const item of needs) selected[item.color] = 1;
   if (sumTokens(selected) === 0) {
     for (const color of COLORS.filter((c) => state.game.bank[c] > 0).slice(0, 3)) selected[color] = 1;
   }
