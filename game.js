@@ -1666,16 +1666,41 @@ function cpuTurn() {
   }
 
   const targetEntry = pickTarget(cpu, player, phase, allMarket);
-  const selected = chooseTokensFor(cpu, targetEntry?.card, phase, allMarket);
-  if (validTokenSelection(selected, game.bank)) {
-    const picks = COLORS.flatMap((c) => Array(selected[c]).fill(c));
-    for (const color of COLORS) {
-      cpu.tokens[color] += selected[color];
-      game.bank[color] -= selected[color];
+
+  // Don't hoard tokens: the 10-token cap means excess tokens just slow the
+  // engine down and force a discard later, so once the CPU is already
+  // sitting on a pile it should convert that stockpile into a card (plus a
+  // gold) via reserving rather than keep grabbing more - but only when
+  // reserving is actually available; taking tokens still beats passing.
+  const hoarding = sumTokens(cpu.tokens) >= 8;
+  const canReserveAlternative = cpu.reserved.length < 3 && (targetEntry || game.decks[1].length);
+  if (!(hoarding && canReserveAlternative)) {
+    const selected = chooseTokensFor(cpu, targetEntry?.card, phase, allMarket);
+    if (validTokenSelection(selected, game.bank)) {
+      const picks = COLORS.flatMap((c) => Array(selected[c]).fill(c));
+      for (const color of COLORS) {
+        cpu.tokens[color] += selected[color];
+        game.bank[color] -= selected[color];
+      }
+      game.log = "CPU가 토큰을 가져갔습니다.";
+      afterMainAction("cpu");
+      flyTokensTo(picks, "#cpuPanel");
+      return;
     }
-    game.log = "CPU가 토큰을 가져갔습니다.";
+  }
+
+  // Reserving isn't only denial - the gold token it grants is valuable on
+  // its own - so when there's a real market target and a free reserve slot,
+  // prefer that over a blind tier-1 pull.
+  if (cpu.reserved.length < 3 && targetEntry) {
+    const rect = document.querySelector(`[data-card-tier="${targetEntry.tier}"][data-card-index="${targetEntry.index}"]`)?.getBoundingClientRect();
+    const nextCard = game.decks[targetEntry.tier].pop() || null;
+    cpu.reserved.push(targetEntry.card);
+    game.market[targetEntry.tier][targetEntry.index] = null;
+    takeGoldIfAvailable(cpu);
+    game.log = "CPU가 공개 카드를 예약했습니다.";
     afterMainAction("cpu");
-    flyTokensTo(picks, "#cpuPanel");
+    scheduleMarketRefill(targetEntry.tier, targetEntry.index, nextCard, rect);
     return;
   }
   if (cpu.reserved.length < 3 && game.decks[1].length) {
@@ -1722,10 +1747,16 @@ function cardValue(card, player, opponent, phase = "mid") {
   const reachBonus = Math.max(0, 5 - affordability) * (phase === "early" ? 1.4 : 0.9);
   const synergy = (player.bonuses[card.bonus] || 0) * (phase === "early" ? 0.5 : 0.25);
   const buildBonus = phase === "early" && card.points === 0 ? 1.4 : 0;
+  // Splendor is a tempo race, not an engine-builder for its own sake - points
+  // per resource spent is a stable measure of a card's intrinsic quality,
+  // independent of what's currently affordable, so it breaks ties toward
+  // the more action-efficient purchase.
+  const totalCost = Object.values(card.cost).reduce((sum, v) => sum + v, 0);
+  const efficiency = totalCost > 0 ? (card.points / totalCost) * 1.5 : 0;
   // Considering the opponent's board: a card they could buy right now is
   // worth more to *us* too, since buying or reserving it first denies them.
   const denial = opponent && canBuy(card, opponent) ? card.points * 0.6 + 0.5 : 0;
-  return card.points * pointsWeight + reachBonus + synergy + buildBonus + nobleAffinity(card, player, phase) + denial;
+  return card.points * pointsWeight + reachBonus + synergy + buildBonus + efficiency + nobleAffinity(card, player, phase) + denial;
 }
 
 // Recomputed fresh every call (never a fixed, sticky target) from whatever
