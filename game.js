@@ -960,6 +960,19 @@ function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale
   anim.oncancel = cleanup;
 }
 
+// A buy/noble-gain flight used to be purely decorative: the real state
+// (market slot cleared, score/hand updated) committed and rendered instantly,
+// so the ghost was just eye candy flying over a board that already showed
+// the result - making the transfer read as instant no matter how long the
+// flight lasted. This instead starts the flight from wherever the card
+// currently sits, delays the actual commit until the flight lands, and skips
+// the wait entirely when there's nothing to animate from (e.g. off-screen).
+function flyThenCommit(clone, target, commit) {
+  if (!clone) return commit();
+  flyTo(clone.ghost, clone.rect, target, { fade: true, endScale: .3, duration: BUY_FLY_MS });
+  setTimeout(commit, BUY_FLY_MS);
+}
+
 function flyElementTo(sourceEl, targetEl, options) {
   const clone = cloneFlying(sourceEl);
   if (!clone) return;
@@ -1389,28 +1402,37 @@ function takeTokens() {
 function buyMarket() {
   const { tier, index, card } = state.selectedCard;
   const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
-  const nextCard = state.game.decks[tier].pop() || null;
   playSfx("buy");
-  buyCard(card, state.game.players.player);
-  state.game.market[tier][index] = null;
-  state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
   clearSelection();
-  afterMainAction("player");
-  if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
-  scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
+  state.pending = { type: "buying" };
+  render();
+  flyThenCommit(marketClone, document.querySelector("#playerPanel .portrait"), () => {
+    const nextCard = state.game.decks[tier].pop() || null;
+    buyCard(card, state.game.players.player);
+    state.game.market[tier][index] = null;
+    state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
+    state.pending = null;
+    afterMainAction("player");
+    scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
+  });
 }
 
 function buyReserved() {
   const player = state.game.players.player;
-  const card = player.reserved[state.selectedReserved];
-  const reservedClone = cloneFlying(document.querySelector(`#playerPanel [data-slot="${state.selectedReserved}"]`));
+  const index = state.selectedReserved;
+  const card = player.reserved[index];
+  const reservedClone = cloneFlying(document.querySelector(`#playerPanel [data-slot="${index}"]`));
   playSfx("buy");
-  buyCard(card, player);
-  player.reserved.splice(state.selectedReserved, 1);
-  state.game.log = "예약 카드를 구매했습니다.";
   clearSelection();
-  afterMainAction("player");
-  if (reservedClone) flyTo(reservedClone.ghost, reservedClone.rect, document.querySelector("#playerPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
+  state.pending = { type: "buying" };
+  render();
+  flyThenCommit(reservedClone, document.querySelector("#playerPanel .portrait"), () => {
+    buyCard(card, player);
+    player.reserved.splice(index, 1);
+    state.game.log = "예약 카드를 구매했습니다.";
+    state.pending = null;
+    afterMainAction("player");
+  });
 }
 
 function buyCard(card, player) {
@@ -1543,20 +1565,14 @@ function checkNobles(playerKey) {
     if (playerKey === "player") playSfx("noble");
     const noble = eligible[0];
     const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
-    gainNoble(playerKey, noble);
-    completeAction(playerKey);
-    flyNobleGain(nobleClone, playerKey);
+    const target = document.querySelector(playerKey === "player" ? "#playerPanel .portrait" : "#cpuPanel .portrait");
+    flyThenCommit(nobleClone, target, () => {
+      gainNoble(playerKey, noble);
+      completeAction(playerKey);
+    });
     return;
   }
   showNobleChoice(eligible);
-}
-
-// Flies a cloned noble-card ghost from the nobles rail to whichever side
-// (player or CPU) just gained it.
-function flyNobleGain(nobleClone, playerKey) {
-  if (!nobleClone) return;
-  const target = document.querySelector(playerKey === "player" ? "#playerPanel .portrait" : "#cpuPanel .portrait");
-  flyTo(nobleClone.ghost, nobleClone.rect, target, { fade: true, endScale: .3, duration: BUY_FLY_MS });
 }
 
 function showNobleChoice(eligible) {
@@ -1578,12 +1594,12 @@ function showNobleChoice(eligible) {
     playSfx("noble");
     const noble = eligible.find((item) => item.id === button.dataset.noble);
     const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
-    gainNoble("player", noble);
     modal.classList.add("hidden");
-    state.pending = null;
-    completeAction("player");
-    render();
-    flyNobleGain(nobleClone, "player");
+    flyThenCommit(nobleClone, document.querySelector("#playerPanel .portrait"), () => {
+      gainNoble("player", noble);
+      state.pending = null;
+      completeAction("player");
+    });
   };
 }
 
@@ -1641,13 +1657,14 @@ function cpuTurn() {
   if (buyable.length) {
     const pick = buyable[0];
     const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${pick.tier}"][data-card-index="${pick.index}"]`));
-    const nextCard = game.decks[pick.tier].pop() || null;
-    buyCard(pick.card, cpu);
-    game.market[pick.tier][pick.index] = null;
-    game.log = "CPU가 공개 카드를 구매했습니다.";
-    afterMainAction("cpu");
-    if (marketClone) flyTo(marketClone.ghost, marketClone.rect, document.querySelector("#cpuPanel .portrait"), { fade: true, endScale: .3, duration: BUY_FLY_MS });
-    scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
+    flyThenCommit(marketClone, document.querySelector("#cpuPanel .portrait"), () => {
+      const nextCard = game.decks[pick.tier].pop() || null;
+      buyCard(pick.card, cpu);
+      game.market[pick.tier][pick.index] = null;
+      game.log = "CPU가 공개 카드를 구매했습니다.";
+      afterMainAction("cpu");
+      scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
+    });
     return;
   }
 
