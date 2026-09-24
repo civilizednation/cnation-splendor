@@ -913,10 +913,10 @@ function payFor(card, player, bank) {
 const FLY_MS = 300;
 const FLIP_MS = 340;
 // Buying/gaining a card is a meaningful moment (it's what actually moves
-// cards into someone's hand) so it gets twice the normal flight time - long
-// enough to actually see the card travel from deck/market to the buyer,
+// cards into someone's hand) so it gets four times the normal flight time -
+// long enough to actually see the card travel from deck/market to the buyer,
 // unlike quick token flourishes.
-const BUY_FLY_MS = FLY_MS * 2;
+const BUY_FLY_MS = FLY_MS * 4;
 
 function cloneFlying(el) {
   if (!el) return null;
@@ -941,7 +941,7 @@ function cloneFlying(el) {
   return { ghost, rect };
 }
 
-function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale = null, delay = 0 } = {}) {
+function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale = null, delay = 0, lift = false } = {}) {
   const toRect = toEl && typeof toEl.getBoundingClientRect === "function" ? toEl.getBoundingClientRect() : toEl;
   if (!ghost) return;
   if (!fromRect || !toRect || !toRect.width) {
@@ -951,10 +951,31 @@ function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale
   const dx = (toRect.left + toRect.width / 2) - (fromRect.left + fromRect.width / 2);
   const dy = (toRect.top + toRect.height / 2) - (fromRect.top + fromRect.height / 2);
   const scale = endScale != null ? endScale : Math.max(.3, Math.min(1.2, toRect.width / fromRect.width));
-  const anim = ghost.animate([
-    { transform: "translate(0,0) scale(1)", opacity: 1 },
-    { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: fade ? 0 : 1 }
-  ], { duration, delay, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" });
+  let keyframes, easing;
+  if (lift) {
+    // Reads as a hand physically picking the card up off the table and
+    // carrying it over, rather than a flat ghost sliding across the screen:
+    // an initial pop up (scale + shadow lift) into an arced carry (a
+    // mid-flight bump above the straight line, with a slight tilt), landing
+    // at the destination. Stays fully opaque until the last stretch, where
+    // it fades only as it's being tucked into the hand/portrait.
+    const liftPx = Math.min(70, Math.max(28, Math.abs(dy) * 0.18));
+    const tilt = dx >= 0 ? 4 : -4;
+    keyframes = [
+      { transform: "translate(0,0) scale(1) rotate(0deg)", filter: "drop-shadow(0 2px 4px rgba(0,0,0,.25))", offset: 0 },
+      { transform: `translate(${dx * .12}px, ${dy * .12 - liftPx}px) scale(1.1) rotate(${tilt}deg)`, filter: "drop-shadow(0 22px 24px rgba(0,0,0,.4))", offset: .22 },
+      { transform: `translate(${dx * .6}px, ${dy * .6 - liftPx * .55}px) scale(${(1 + scale) / 2}) rotate(${-tilt * .6}deg)`, filter: "drop-shadow(0 14px 16px rgba(0,0,0,.3))", offset: .68, opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${scale}) rotate(0deg)`, filter: "drop-shadow(0 2px 4px rgba(0,0,0,0))", opacity: fade ? 0 : 1, offset: 1 }
+    ];
+    easing = "cubic-bezier(.3,.05,.25,1)";
+  } else {
+    keyframes = [
+      { transform: "translate(0,0) scale(1)", opacity: 1 },
+      { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: fade ? 0 : 1 }
+    ];
+    easing = "cubic-bezier(.22,.61,.36,1)";
+  }
+  const anim = ghost.animate(keyframes, { duration, delay, easing, fill: "forwards" });
   const cleanup = () => ghost.remove();
   anim.onfinish = cleanup;
   anim.oncancel = cleanup;
@@ -969,7 +990,7 @@ function flyTo(ghost, fromRect, toEl, { fade = true, duration = FLY_MS, endScale
 // the wait entirely when there's nothing to animate from (e.g. off-screen).
 function flyThenCommit(clone, target, commit) {
   if (!clone) return commit();
-  flyTo(clone.ghost, clone.rect, target, { fade: true, endScale: .3, duration: BUY_FLY_MS });
+  flyTo(clone.ghost, clone.rect, target, { fade: true, endScale: .3, duration: BUY_FLY_MS, lift: true });
   setTimeout(commit, BUY_FLY_MS);
 }
 
