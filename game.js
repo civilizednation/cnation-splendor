@@ -1600,8 +1600,14 @@ function checkNobles(playerKey) {
     const noble = eligible[0];
     const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
     const target = document.querySelector(playerKey === "player" ? "#playerPanel .portrait" : "#cpuPanel .portrait");
+    if (playerKey === "player") state.pending = { type: "noble" };
+    // Leaves the rail the instant the noble lifts off, same as a bought
+    // card leaving the market - not when it lands in the hand/portrait.
+    state.game.nobles = state.game.nobles.filter((item) => item.id !== noble.id);
+    render();
     flyThenCommit(nobleClone, target, () => {
       gainNoble(playerKey, noble);
+      if (playerKey === "player") state.pending = null;
       completeAction(playerKey);
     });
     return;
@@ -1629,6 +1635,8 @@ function showNobleChoice(eligible) {
     const noble = eligible.find((item) => item.id === button.dataset.noble);
     const nobleClone = cloneFlying(document.querySelector(`#nobles [data-noble-id="${noble.id}"]`));
     modal.classList.add("hidden");
+    state.game.nobles = state.game.nobles.filter((item) => item.id !== noble.id);
+    render();
     flyThenCommit(nobleClone, document.querySelector("#playerPanel .portrait"), () => {
       gainNoble("player", noble);
       state.pending = null;
@@ -1641,7 +1649,6 @@ function gainNoble(playerKey, noble) {
   const player = state.game.players[playerKey];
   if (playerKey === "cpu") playSfx("noble");
   player.nobles.push(noble);
-  state.game.nobles = state.game.nobles.filter((item) => item.id !== noble.id);
   state.game.log = `${player.name}에게 귀족이 방문했습니다.`;
 }
 
