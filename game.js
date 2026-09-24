@@ -1056,17 +1056,27 @@ function flipCardTo(tier, card, toEl) {
 }
 
 // Leaves a market slot visibly empty for `delay`ms (the time the bought/
-// reserved card's own flight takes to clear it) before dropping the next
-// card from that tier's deck into it, flying/flipping it in from the deck
-// pile - so the slot genuinely reads as "card leaves -> empty -> new card
-// arrives" instead of the replacement popping in instantly underneath.
+// reserved card's own flight takes to clear it) before flying/flipping the
+// next card in from that tier's deck pile - and, like the buy/noble flights,
+// doesn't actually drop the real card into the slot until that flip has
+// landed, so the slot reads as "card leaves -> empty -> new card flies in
+// and unfolds" instead of the replacement popping in instantly underneath
+// its own still-arriving flip ghost.
 function scheduleMarketRefill(tier, index, card, slotRect, delay = FLY_MS) {
   if (!card) return;
   setTimeout(() => {
     if (!state.game) return;
-    state.game.market[tier][index] = card;
-    render();
-    if (slotRect) flipCardTo(tier, card, slotRect);
+    if (!slotRect) {
+      state.game.market[tier][index] = card;
+      render();
+      return;
+    }
+    flipCardTo(tier, card, slotRect);
+    setTimeout(() => {
+      if (!state.game) return;
+      state.game.market[tier][index] = card;
+      render();
+    }, FLIP_MS);
   }, delay);
 }
 
@@ -1423,18 +1433,21 @@ function takeTokens() {
 function buyMarket() {
   const { tier, index, card } = state.selectedCard;
   const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${tier}"][data-card-index="${index}"]`));
+  const nextCard = state.game.decks[tier].pop() || null;
   playSfx("buy");
   clearSelection();
   state.pending = { type: "buying" };
+  // The slot empties the instant the card lifts off (in step with the clone
+  // starting its flight), not when it lands - the refill can start flying in
+  // right away too, concurrently with the bought card's own flight.
+  state.game.market[tier][index] = null;
   render();
+  scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
   flyThenCommit(marketClone, document.querySelector("#playerPanel .portrait"), () => {
-    const nextCard = state.game.decks[tier].pop() || null;
     buyCard(card, state.game.players.player);
-    state.game.market[tier][index] = null;
     state.game.log = `레벨 ${tier} 카드를 구매했습니다.`;
     state.pending = null;
     afterMainAction("player");
-    scheduleMarketRefill(tier, index, nextCard, marketClone && marketClone.rect);
   });
 }
 
@@ -1446,10 +1459,10 @@ function buyReserved() {
   playSfx("buy");
   clearSelection();
   state.pending = { type: "buying" };
+  player.reserved.splice(index, 1);
   render();
   flyThenCommit(reservedClone, document.querySelector("#playerPanel .portrait"), () => {
     buyCard(card, player);
-    player.reserved.splice(index, 1);
     state.game.log = "예약 카드를 구매했습니다.";
     state.pending = null;
     afterMainAction("player");
@@ -1678,13 +1691,14 @@ function cpuTurn() {
   if (buyable.length) {
     const pick = buyable[0];
     const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${pick.tier}"][data-card-index="${pick.index}"]`));
+    const nextCard = game.decks[pick.tier].pop() || null;
+    game.market[pick.tier][pick.index] = null;
+    render();
+    scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
     flyThenCommit(marketClone, document.querySelector("#cpuPanel .portrait"), () => {
-      const nextCard = game.decks[pick.tier].pop() || null;
       buyCard(pick.card, cpu);
-      game.market[pick.tier][pick.index] = null;
       game.log = "CPU가 공개 카드를 구매했습니다.";
       afterMainAction("cpu");
-      scheduleMarketRefill(pick.tier, pick.index, nextCard, marketClone && marketClone.rect);
     });
     return;
   }
