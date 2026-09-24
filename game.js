@@ -1666,7 +1666,7 @@ function cpuTurn() {
   }
 
   const targetEntry = pickTarget(cpu, player, phase, allMarket);
-  const selected = chooseTokensFor(cpu, targetEntry?.card, phase);
+  const selected = chooseTokensFor(cpu, targetEntry?.card, phase, allMarket);
   if (validTokenSelection(selected, game.bank)) {
     const picks = COLORS.flatMap((c) => Array(selected[c]).fill(c));
     for (const color of COLORS) {
@@ -1754,26 +1754,47 @@ function pickThreat(cpu, player, phase, allMarket) {
 // to prefer breadth over the old habit of rushing 2-of-one-color whenever
 // merely legal. A 2-of-one-color pick only happens when the target realistically
 // needs just one more color (so "3 different" isn't even an option to give up).
-function chooseTokensFor(player, target, phase = "mid") {
+// When the primary target only needs 1-2 more colors, the pick is topped up
+// to a full 3 using whatever's next-most-useful (colors other good market
+// cards need, then any available bank color) - a narrowly-funded target
+// should never leave tokens on the table when nothing forces a smaller pick.
+function chooseTokensFor(player, target, phase = "mid", allMarket = []) {
   const selected = emptyTokens();
-  if (!target) return selected;
-  const needs = COLORS.map((color) => ({
+  const bank = state.game.bank;
+  const needsFor = (card) => COLORS.map((color) => ({
     color,
-    need: Math.max(0, (target.cost[color] || 0) - player.bonuses[color] - player.tokens[color])
-  })).filter((x) => x.need > 0 && state.game.bank[x.color] > 0).sort((a, b) => b.need - a.need);
+    need: Math.max(0, (card.cost[color] || 0) - player.bonuses[color] - player.tokens[color])
+  })).filter((x) => x.need > 0 && bank[x.color] > 0).sort((a, b) => b.need - a.need);
 
-  if (needs.length >= 3) {
-    for (const item of needs.slice(0, 3)) selected[item.color] = 1;
+  const primary = target ? needsFor(target) : [];
+
+  if (primary.length === 1 && primary[0].need >= 2 && bank[primary[0].color] >= 4) {
+    selected[primary[0].color] = 2;
     return selected;
   }
-  if (needs.length === 1 && needs[0].need >= 2 && state.game.bank[needs[0].color] >= 4) {
-    selected[needs[0].color] = 2;
-    return selected;
+
+  const chosen = primary.slice(0, 3).map((x) => x.color);
+  if (chosen.length < 3 && allMarket.length) {
+    const secondaryNeed = {};
+    for (const { card } of allMarket) {
+      if (card === target) continue;
+      for (const { color, need } of needsFor(card)) secondaryNeed[color] = (secondaryNeed[color] || 0) + need;
+    }
+    const bySecondary = Object.keys(secondaryNeed)
+      .filter((c) => !chosen.includes(c) && bank[c] > 0)
+      .sort((a, b) => secondaryNeed[b] - secondaryNeed[a]);
+    for (const color of bySecondary) {
+      if (chosen.length >= 3) break;
+      chosen.push(color);
+    }
   }
-  for (const item of needs) selected[item.color] = 1;
-  if (sumTokens(selected) === 0) {
-    for (const color of COLORS.filter((c) => state.game.bank[c] > 0).slice(0, 3)) selected[color] = 1;
+  if (chosen.length < 3) {
+    for (const color of COLORS) {
+      if (chosen.length >= 3) break;
+      if (!chosen.includes(color) && bank[color] > 0) chosen.push(color);
+    }
   }
+  for (const color of chosen) selected[color] = 1;
   return selected;
 }
 
