@@ -143,9 +143,8 @@ const AVATARS = [
 const CPU_AVATAR = { id: "cpu_robot", label: "AI 로봇", src: "./assets/characters/cpu_robot.webp" };
 const NOBLE_FACES = ["👑", "🧔", "👸", "🧑‍⚖️", "🧕", "👨‍🏫", "👩‍🎨", "🧑‍💼", "👳", "🧓"];
 const DIFFICULTY_META = {
-  easy: { label: "쉬움", note: "느긋한 AI" },
-  normal: { label: "보통", note: "추천 균형" },
-  hard: { label: "어려움", note: "공격적 AI" }
+  easy: { label: "쉬움", note: "처음이라면 추천" },
+  normal: { label: "보통", note: "기본 난이도" }
 };
 const THEME_META = {
   classic: { label: "Classic", note: "왕실 보석상" },
@@ -1629,17 +1628,17 @@ function cpuTurn() {
   const phase = gamePhase(game);
   const allMarket = [3, 2, 1].flatMap((tier) => game.market[tier].map((card, index) => ({ tier, index, card })).filter((x) => x.card));
   const buyableReserved = cpu.reserved.map((card, index) => ({ card, index })).filter((x) => canBuy(x.card, cpu));
-  const buyable = allMarket.filter((x) => canBuy(x.card, cpu)).sort((a, b) => cardValue(b.card, cpu, player, phase) - cardValue(a.card, cpu, player, phase));
+  const buyable = allMarket.filter((x) => canBuy(x.card, cpu)).sort((a, b) => cardValue(b.card, cpu, player, phase, allMarket) - cardValue(a.card, cpu, player, phase, allMarket));
 
   if (buyableReserved.length) {
-    const pick = buyableReserved.sort((a, b) => cardValue(b.card, cpu, player, phase) - cardValue(a.card, cpu, player, phase))[0];
+    const pick = withEasyNoise(buyableReserved.sort((a, b) => cardValue(b.card, cpu, player, phase, allMarket) - cardValue(a.card, cpu, player, phase, allMarket)));
     buyCard(pick.card, cpu);
     cpu.reserved.splice(pick.index, 1);
     game.log = "CPU가 예약 카드를 구매했습니다.";
     return afterMainAction("cpu");
   }
   if (buyable.length) {
-    const pick = buyable[0];
+    const pick = withEasyNoise(buyable);
     const marketClone = cloneFlying(document.querySelector(`[data-card-tier="${pick.tier}"][data-card-index="${pick.index}"]`));
     const nextCard = game.decks[pick.tier].pop() || null;
     buyCard(pick.card, cpu);
@@ -1653,9 +1652,10 @@ function cpuTurn() {
 
   // Mid/late game only: with nothing to buy, consider denying the player a
   // card they could snap up next turn - reserving it both blocks them and
-  // banks a card (plus a gold) for the CPU. Skipped in the early phase,
-  // where the priority is steady, cheap building rather than blocking.
-  if (phase !== "early" && cpu.reserved.length < 3) {
+  // banks a card (plus a gold) for the CPU. Skipped in the early phase
+  // (steady, cheap building rather than blocking) and entirely on Easy,
+  // which plays no denial/blocking tactics at all.
+  if (phase !== "early" && state.game.difficulty !== "easy" && cpu.reserved.length < 3) {
     const threat = pickThreat(cpu, player, phase, allMarket);
     if (threat) {
       const rect = document.querySelector(`[data-card-tier="${threat.tier}"][data-card-index="${threat.index}"]`)?.getBoundingClientRect();
@@ -1729,10 +1729,11 @@ function gamePhase(game) {
 }
 
 // How much a noble that wants `card`'s bonus color is worth chasing right
-// now - zero in the early phase (nobles aren't a goal yet), and scaled by
-// how close `player` already is to qualifying otherwise.
+// now - zero in the early phase (nobles aren't a goal yet) and on Easy
+// (no noble-chasing strategy at all), and scaled by how close `player`
+// already is to qualifying otherwise.
 function nobleAffinity(card, player, phase) {
-  if (phase === "early") return 0;
+  if (phase === "early" || state.game.difficulty === "easy") return 0;
   let best = 0;
   for (const noble of state.game.nobles) {
     if (!(noble.req[card.bonus] > 0)) continue;
@@ -1743,7 +1744,20 @@ function nobleAffinity(card, player, phase) {
   return best * (phase === "late" ? 0.55 : 0.35);
 }
 
-function cardValue(card, player, opponent, phase = "mid") {
+// Easy occasionally settles for the second-best option instead of always
+// playing perfectly, so it reads as a gentler, learn-the-game opponent
+// rather than a flat-out weaker version of the same brain. Normal (and any
+// future harder tier) always plays its best-scored move.
+function withEasyNoise(sorted) {
+  if (state.game.difficulty === "easy" && sorted.length > 1 && Math.random() < 0.35) return sorted[1];
+  return sorted[0];
+}
+
+function cardValue(card, player, opponent, phase = "mid", allMarket = []) {
+  return baseCardValue(card, player, opponent, phase) + lookaheadBonus(card, player, opponent, phase, allMarket);
+}
+
+function baseCardValue(card, player, opponent, phase) {
   const affordability = Object.entries(card.cost).reduce((sum, [color, value]) => sum + Math.max(0, value - player.bonuses[color] - player.tokens[color]), 0);
   // Early: don't chase points, chase whatever is cheap and buildable now.
   // Mid/late: points matter increasingly more, since the endgame is a race
@@ -1764,14 +1778,31 @@ function cardValue(card, player, opponent, phase = "mid") {
   return card.points * pointsWeight + reachBonus + synergy + buildBonus + efficiency + nobleAffinity(card, player, phase) + denial;
 }
 
+// Normal-difficulty-only shallow lookahead: rather than judging a card
+// purely on its own merits, also credit it for what it sets up - the best
+// *other* card `player` would be positioned for right after hypothetically
+// gaining this one's bonus. Uses baseCardValue (not the full cardValue) for
+// that follow-up check so this never recurses into itself.
+function lookaheadBonus(card, player, opponent, phase, allMarket) {
+  if (state.game.difficulty !== "normal" || !allMarket.length) return 0;
+  const hypothetical = { ...player, bonuses: { ...player.bonuses, [card.bonus]: (player.bonuses[card.bonus] || 0) + 1 } };
+  let best = 0;
+  for (const { card: other } of allMarket) {
+    if (other === card) continue;
+    best = Math.max(best, baseCardValue(other, hypothetical, opponent, phase));
+  }
+  return best * 0.15;
+}
+
 // Recomputed fresh every call (never a fixed, sticky target) from whatever
 // is on the board right now for both sides, so the CPU's goal shifts turn
 // to turn as the market and both players' progress change.
 function pickTarget(cpu, player, phase, allMarket) {
   if (!allMarket.length) return null;
-  return allMarket
-    .map((x) => ({ ...x, value: cardValue(x.card, cpu, player, phase) }))
-    .sort((a, b) => b.value - a.value)[0];
+  const sorted = allMarket
+    .map((x) => ({ ...x, value: cardValue(x.card, cpu, player, phase, allMarket) }))
+    .sort((a, b) => b.value - a.value);
+  return withEasyNoise(sorted);
 }
 
 // A reserve-to-deny is only worth it (mid/late game) when the card is a

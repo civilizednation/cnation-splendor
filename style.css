@@ -165,7 +165,7 @@ h1 {
   display: grid;
   gap: 10px;
 }
-.segmented { grid-template-columns: repeat(3, 1fr); }
+.segmented { grid-template-columns: repeat(2, 1fr); }
 .theme-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .avatar-choices { grid-template-columns: repeat(3, 1fr); }
 .choice {
